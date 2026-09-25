@@ -1,0 +1,10 @@
+# Rotina de backup
+
+guard "Meu Backup"
+version 1.0
+os windows
+
+watch "{home}/Documents/Projetos"
+debounce 5s
+zip {dest}/projetos-{timestamp}.zip {watch}
+message "Backup salvo em \"{dest}\""

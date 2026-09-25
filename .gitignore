@@ -1,0 +1,10 @@
+*.syso
+gg-launcher.exe
+gguard.exe
+gguard.pid
+gguard.status.json
+gguard.log
+
+gg-script
+ai_session.json
+guards.json
