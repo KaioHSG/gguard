@@ -4,7 +4,7 @@
 
 ```json
 {
-  "my-backup": {
+  "backup": {
     "dest": "${HOME}/OneDrive/Backups",
     "trusted": true,
     "autostart": true,
