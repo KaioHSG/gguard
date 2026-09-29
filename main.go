@@ -10,26 +10,31 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/gguard/gguard/engine"
-	"github.com/gguard/gguard/ggs"
+	"github.com/KaioHSG/gguard/engine"
+	"github.com/KaioHSG/gguard/ggs"
+	"github.com/kardianos/service"
 )
 
-const pidFileName = "gguard.pid"
+var Version = "0.2.0-dev"
 
 var (
-	statusFlag  bool
-	stopFlag    bool
-	quietFlag   bool
-	scriptsFlag scriptsList
-	guardsFlag  string
-	pidFilePath string
-	statusPath  string
+	statusFlag    bool
+	stopFlag      bool
+	quietFlag     bool
+	installFlag   bool
+	uninstallFlag bool
+	startFlag     bool
+	restartFlag   bool
+	userFlag      bool
+	versionFlag   bool
+	upgradeFlag   bool
+	scriptsFlag   scriptsList
+	guardsFlag    string
 )
 
 type scriptsList []string
@@ -38,34 +43,6 @@ func (s *scriptsList) String() string { return strings.Join(*s, ", ") }
 func (s *scriptsList) Set(v string) error {
 	*s = append(*s, v)
 	return nil
-}
-
-func init() {
-	flag.BoolVar(&statusFlag, "status", false, "Show running guard status")
-	flag.BoolVar(&stopFlag, "stop", false, "Stop running instance")
-	flag.BoolVar(&quietFlag, "quiet", false, "Log to file instead of console")
-	flag.BoolVar(&quietFlag, "q", false, "")
-	flag.Var(&scriptsFlag, "scripts", ".ggs file or directory")
-	flag.Var(&scriptsFlag, "s", "")
-	flag.Var(&scriptsFlag, "script", "")
-	flag.StringVar(&guardsFlag, "guards", "", "Path to guards.json (default: next to gguard.exe)")
-	flag.StringVar(&guardsFlag, "g", "", "")
-
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `gguard - file watcher and backup automator
-
-  Double-click gguard.exe to auto-start all routines with autostart:true
-
-Usage:
-  gguard -s <file.ggs or directory> [-g <guards.json>] [-q]
-  gguard --stop
-  gguard --status
-  gguard --help
-
-Flags:
-`)
-		flag.PrintDefaults()
-	}
 }
 
 type statusEntry struct {
@@ -83,6 +60,63 @@ type guardsRoutine struct {
 	DeleteOlderThan string `json:"delete_older_than"`
 }
 
+func init() {
+	flag.BoolVar(&statusFlag, "status", false, "Show service status and active guards")
+	flag.BoolVar(&stopFlag, "stop", false, "Stop the service")
+	flag.BoolVar(&quietFlag, "quiet", false, "Log to file instead of console")
+	flag.BoolVar(&quietFlag, "q", false, "")
+	flag.BoolVar(&installFlag, "install", false, "Install as system service (use --user for per-user)")
+	flag.BoolVar(&uninstallFlag, "uninstall", false, "Uninstall the service (use --user for per-user)")
+	flag.BoolVar(&startFlag, "start", false, "Start the service")
+	flag.BoolVar(&restartFlag, "restart", false, "Restart the service")
+	flag.BoolVar(&userFlag, "user", false, "Install/uninstall as a per-user service (no admin required)")
+	flag.BoolVar(&versionFlag, "version", false, "Show version")
+	flag.BoolVar(&versionFlag, "v", false, "")
+	flag.BoolVar(&upgradeFlag, "upgrade", false, "Upgrade existing installation")
+	flag.Var(&scriptsFlag, "scripts", ".ggs file or directory")
+	flag.Var(&scriptsFlag, "s", "")
+	flag.Var(&scriptsFlag, "script", "")
+	flag.StringVar(&guardsFlag, "guards", "", "Path to guards.json (default: next to gguard)")
+	flag.StringVar(&guardsFlag, "g", "", "")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, `gguard - file watcher and backup automator
+
+Usage:
+  gguard -s <file.ggs or directory> [-g <guards.json>] [-q]
+  gguard --install [--user]
+  gguard --uninstall [--user]
+  gguard --upgrade
+  gguard --start
+  gguard --stop
+  gguard --restart
+  gguard --status
+  gguard --version
+  gguard --help
+
+Install:
+  --install [--user]  Copy binary, configs and scripts to a standard location,
+                      add to PATH, and register as a system service.
+                        System: %%ProgramFiles%%\GopherGuard (requires admin)
+                        User:   %%LocalAppData%%\Programs\GopherGuard
+  --uninstall [--user] Remove the service and PATH entry.
+                      Auto-detects user/system if --user is omitted.
+  --upgrade           Reinstall keeping the same install type.
+                      Auto-detects whether system or user.
+
+Service Management:
+  --start             Start the service
+  --stop              Stop the service
+  --restart           Restart the service
+  --status            Show service status and active guards
+  --user              Install/uninstall as per-user (no admin for user install)
+
+Flags:
+`)
+		flag.PrintDefaults()
+	}
+}
+
 func main() {
 	for i, arg := range os.Args {
 		if strings.HasPrefix(arg, "--") && len(arg) > 2 && arg[2] != '-' {
@@ -92,34 +126,67 @@ func main() {
 
 	flag.Parse()
 
-	exeDir := exeDir()
-	pidFilePath = filepath.Join(exeDir, pidFileName)
-	statusPath = filepath.Join(exeDir, "gguard.status.json")
+	if versionFlag {
+		fmt.Printf("gguard v%s\n", Version)
+		return
+	}
 
+	if installFlag {
+		doInstall(userFlag)
+		return
+	}
+	if uninstallFlag {
+		doUninstall(userFlag)
+		return
+	}
+
+	if upgradeFlag {
+		doUpgrade()
+		return
+	}
+
+	prg := &program{}
+	s := newService(prg, userFlag)
+
+	if startFlag {
+		serviceControl(s, "start")
+		return
+	}
 	if stopFlag {
-		doStop()
+		serviceControl(s, "stop")
+		return
+	}
+	if restartFlag {
+		serviceControl(s, "restart")
 		return
 	}
 
 	if statusFlag {
-		showStatus()
+		showStatus(s)
 		return
 	}
 
-	lockInstance()
-	writePID()
-	defer func() {
-		os.Remove(pidFilePath)
-		os.Remove(statusPath)
-	}()
-
-	autoStart := len(scriptsFlag) == 0
-
-	if autoStart {
-		scriptsFlag = []string{filepath.Join(exeDir, "gg-scripts")}
+	if isServiceManager() {
+		logServiceStart()
+		if err := s.Run(); err != nil {
+			log.Fatal(err)
+		}
+		logServiceStop()
+		return
 	}
 
-	if quietFlag {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runGuards(ctx)
+}
+
+func runGuards(ctx context.Context) {
+	exeDir := exeDir()
+	statusPath := filepath.Join(exeDir, "gguard.status.json")
+
+	if isServiceMode() && !quietFlag {
+		setupServiceLog(exeDir)
+	} else if quietFlag {
 		logFile := filepath.Join(exeDir, "gguard.log")
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err == nil {
@@ -127,8 +194,15 @@ func main() {
 		}
 	}
 
+	scripts := scriptsFlag
+	autoStart := len(scripts) == 0
+
+	if autoStart {
+		scripts = []string{filepath.Join(exeDir, "gg-scripts")}
+	}
+
 	configPath := resolveGuardsPath(guardsFlag, exeDir)
-	scriptPaths := resolveScripts(scriptsFlag)
+	scriptPaths := resolveScripts(scripts)
 
 	if autoStart {
 		scriptPaths = filterAutostart(configPath, scriptPaths)
@@ -142,15 +216,14 @@ func main() {
 	home := userHomeDir()
 
 	type instance struct {
-		eng   *engine.Engine
-		name  string
-		watch string
+		eng  *engine.Engine
+		name string
 	}
 
 	var instances []instance
 	var statusEntries []statusEntry
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel2()
 
 	for _, path := range scriptPaths {
 		data, err := os.ReadFile(path)
@@ -180,8 +253,8 @@ func main() {
 			continue
 		}
 
-		eng.Start(ctx)
-		instances = append(instances, instance{eng: eng, name: guard.Name, watch: eng.Watch()})
+		eng.Start(ctx2)
+		instances = append(instances, instance{eng: eng, name: guard.Name})
 		statusEntries = append(statusEntries, statusEntry{Name: guard.Name, Watch: eng.Watch()})
 		log.Printf("gguard: monitoring %q for %q", guard.Watch, guard.Name)
 	}
@@ -190,13 +263,14 @@ func main() {
 		log.Fatal("no guards started")
 	}
 
-	writeStatus(statusEntries)
+	writeStatus(statusPath, statusEntries)
 	log.Printf("gguard: %d guard(s) running", len(instances))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
 	select {
+	case <-ctx.Done():
 	case <-sigCh:
 	case <-checkStopFile(filepath.Join(exeDir, "gguard.stop")):
 		os.Remove(filepath.Join(exeDir, "gguard.stop"))
@@ -214,6 +288,8 @@ func main() {
 	}
 	wg.Wait()
 	log.Println("gguard: stopped")
+
+	os.Remove(statusPath)
 }
 
 func checkStopFile(path string) <-chan struct{} {
@@ -259,85 +335,16 @@ func loadGuardsConfig(path string) map[string]guardsRoutine {
 	return config
 }
 
-func doStop() {
-	data, err := os.ReadFile(pidFilePath)
+func showStatus(s service.Service) {
+	status, err := s.Status()
 	if err != nil {
-		fmt.Println("gguard is not running")
+		fmt.Printf("gguard: %v\n", err)
 		return
 	}
 
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid == 0 {
-		fmt.Println("gguard is not running (stale PID file)")
-		return
-	}
+	info := fmt.Sprintf("gguard is %s", statusMessage(status))
 
-	if !processRunning(pid) {
-		fmt.Println("gguard is not running")
-		os.Remove(pidFilePath)
-		return
-	}
-
-	p, err := os.FindProcess(pid)
-	if err != nil {
-		fmt.Printf("cannot find process %d: %v\n", pid, err)
-		return
-	}
-
-	if err := p.Kill(); err != nil {
-		fmt.Printf("cannot stop process %d: %v\n", pid, err)
-		return
-	}
-
-	fmt.Printf("gguard stopped (PID %d)\n", pid)
-	os.Remove(pidFilePath)
-	os.Remove(statusPath)
-}
-
-func lockInstance() {
-	if _, err := os.Stat(pidFilePath); err == nil {
-		data, err := os.ReadFile(pidFilePath)
-		if err == nil {
-			pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-			if err == nil && pid > 0 {
-				if processRunning(pid) {
-					log.Fatalf("gguard is already running (PID %d). Use --status.", pid)
-				}
-			}
-		}
-		os.Remove(pidFilePath)
-	}
-}
-
-func writePID() {
-	os.WriteFile(pidFilePath, []byte(strconv.Itoa(os.Getpid())), 0644)
-}
-
-func writeStatus(entries []statusEntry) {
-	data, _ := json.MarshalIndent(entries, "", "  ")
-	os.WriteFile(statusPath, data, 0644)
-}
-
-func showStatus() {
-	data, err := os.ReadFile(pidFilePath)
-	if err != nil {
-		fmt.Println("gguard is not running")
-		return
-	}
-
-	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
-	if err != nil || pid == 0 {
-		fmt.Println("gguard is not running (stale PID file)")
-		return
-	}
-
-	if !processRunning(pid) {
-		fmt.Printf("gguard was running (PID %d) but process is gone (stale lock)\n", pid)
-		return
-	}
-
-	info := fmt.Sprintf("gguard is running (PID %d)", pid)
-
+	statusPath := filepath.Join(exeDir(), "gguard.status.json")
 	statusData, err := os.ReadFile(statusPath)
 	if err == nil {
 		var entries []statusEntry
@@ -347,11 +354,6 @@ func showStatus() {
 				info += fmt.Sprintf("\n  * %s -> %s", e.Name, e.Watch)
 			}
 		}
-	}
-
-	uptime := processUptime(pid)
-	if uptime > 0 {
-		info += fmt.Sprintf("\nUptime: %s", uptime.Round(time.Second))
 	}
 
 	fmt.Println(info)
@@ -452,6 +454,11 @@ func userHomeDir() string {
 		return ""
 	}
 	return home
+}
+
+func writeStatus(path string, entries []statusEntry) {
+	data, _ := json.MarshalIndent(entries, "", "  ")
+	os.WriteFile(path, data, 0644)
 }
 
 func runtimeOS() string {

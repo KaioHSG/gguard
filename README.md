@@ -1,6 +1,6 @@
 # GopherGuard (gguard)
 
-*Lightweight, cross-platform executable service written in Go to monitor directory changes and trigger custom tasks asynchronously — automatic backup and synchronization.*
+*Lightweight, cross-platform file watcher and backup automator written in Go. Monitors directory changes and triggers configurable tasks — ZIP compression, incremental sync, and more.*
 
 ### 1. Architecture
 
@@ -39,11 +39,24 @@ zip {dest}/projetos-{timestamp}.zip {watch}
 message "Backup saved at \"{dest}\""
 ```
 
-### 5. Usage
+### 5. Installation & Usage
 
 ```
-gguard -script example/backup.ggs -config example/guards.json
+# Download and run
+gguard -s example/backup.ggs -g example/guards.json
+
+# Install as a system service (copies to standard location + adds to PATH)
+gguard --install
+gguard --start
+gguard --status
+
+# Or install as a per-user service (Linux: adds .desktop entry + icon)
+gguard --install --user
+gguard --start
+gguard --status
 ```
+
+On Linux, `--install` also registers a `.desktop` entry and icon, so GopherGuard appears in your application launcher.
 
 ### 6. Context Variables
 
@@ -77,7 +90,7 @@ gguard -script example/backup.ggs -config example/guards.json
 |-------|-------------|
 | `dest` | Destination folder |
 | `trusted` | Allows sensitive commands (backup cleanup) |
-| `autostart` | Starts with `gg-launcher.exe` |
+| `autostart` | Starts automatically when the service is running |
 | `free_cache` | Releases OneDrive cache after (e.g., `"1h"`) |
 | `keep_backups` | Max zips kept (requires `trusted`) |
 | `delete_older_than` | Removes zips older than (e.g., `"7d"`) |

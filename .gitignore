@@ -1,9 +1,7 @@
 dist
 *.syso
-gg-launcher.exe
 gguard
 gguard.exe
-gguard.pid
 gguard.status.json
 gguard.log
 

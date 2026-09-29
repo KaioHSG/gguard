@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gguard/gguard/ggs"
+	"github.com/KaioHSG/gguard/ggs"
 )
 
 type Engine struct {
@@ -43,9 +43,9 @@ func New(guard *ggs.Guard, configVars map[string]string) (*Engine, error) {
 	}
 
 	return &Engine{
-		guard:   guard,
-		vars:    vars,
-		watcher: w,
+		guard:     guard,
+		vars:      vars,
+		watcher:   w,
 		debouncer: NewDebouncer(guard.Debounce),
 	}, nil
 }
@@ -275,4 +275,3 @@ func resolveVars(s string, vars map[string]string) string {
 	}
 	return s
 }
-

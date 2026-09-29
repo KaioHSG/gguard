@@ -19,7 +19,7 @@
 |-------|------|-------------|
 | `dest` | string | Backup/sync destination path. Becomes `{dest}` in the script |
 | `trusted` | bool | Allows sensitive commands (e.g., delete old backups) |
-| `autostart` | bool | Automatically starts when `gg-launcher.exe` opens |
+| `autostart` | bool | Automatically starts when the service is running |
 | `free_cache` | string | Delay to release local OneDrive cache (e.g., `"1h"`, `"30m"`) |
 | `keep_backups` | int | Maximum `.zip` files kept in the destination (requires `trusted: true`) |
 | `delete_older_than` | string | Removes zips older than the period (e.g., `"7d"`, `"24h"`) |

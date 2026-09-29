@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gguard/gguard/ggs"
+	"github.com/KaioHSG/gguard/ggs"
 )
 
 func TestExecuteMessage(t *testing.T) {

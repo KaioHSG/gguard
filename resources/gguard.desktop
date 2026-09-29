@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=GopherGuard
+Comment=File watcher and backup automator
+Exec={exec}
+Icon=gguard
+Categories=Utility;System;
+Terminal=true

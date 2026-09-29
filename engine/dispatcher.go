@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gguard/gguard/ggs"
+	"github.com/KaioHSG/gguard/ggs"
 )
 
 type Dispatcher struct {
@@ -127,17 +127,17 @@ func (d *Dispatcher) execMessage(args []string) error {
 	return nil
 }
 
-
 func (d *Dispatcher) execSync(args []string) error {
 	deleteOrphans := false
 	bidirectional := false
 	var cleanArgs []string
 	for _, a := range args {
-		if a == "--delete" {
+		switch a {
+		case "--delete":
 			deleteOrphans = true
-		} else if a == "--bidir" {
+		case "--bidir":
 			bidirectional = true
-		} else {
+		default:
 			cleanArgs = append(cleanArgs, a)
 		}
 	}
@@ -286,5 +286,3 @@ func removeOrphans(dest, src string) {
 		return nil
 	})
 }
-
-
