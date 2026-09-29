@@ -13,7 +13,7 @@ done
 
 if [ "$BUILD_ALL" = true ]; then
 
-    go-winres make go-winres make --arch amd64,arm64
+    go-winres make --arch amd64,arm64
 
     echo "Building Windows-AMD64..."
 
