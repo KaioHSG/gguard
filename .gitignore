@@ -7,5 +7,5 @@ gguard.pid
 gguard.status.json
 gguard.log
 
-gg-scripts
-guards.json
+/gg-scripts
+/guards.json

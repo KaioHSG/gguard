@@ -1,83 +1,83 @@
 # GopherGuard (gguard)
 
-*Serviço leve, executável e multiplataforma escrito em Go para monitorar alterações em diretórios e disparar tarefas customizadas de forma assíncrona — backup automático, sincronização, notificações, etc.*
+*Lightweight, cross-platform executable service written in Go to monitor directory changes and trigger custom tasks asynchronously — automatic backup and synchronization.*
 
-### 1. Arquitetura
+### 1. Architecture
 
-Três módulos principais, com baixo acoplamento:
+Three loosely coupled modules:
 
-- **Filesystem Watcher (fsnotify)**: Escuta eventos do sistema operacional (criação, modificação, exclusão) nos caminhos especificados.
-- **Debouncer / Timer Engine**: Filtro inteligente. Aplicativos frequentemente salvam arquivos em rajadas (vários eventos por segundo). O engine aguarda um período de "silêncio" (ex: 5 segundos sem alterações) antes de liberar a execução da tarefa.
-- **Task Dispatcher**: Executor. Uma fila de tarefas customizáveis que recebe o gatilho validado e executa a rotina definida (ex: compactar em .zip, enviar para OneDrive).
+- **Filesystem Watcher (fsnotify)**: Listens for OS events (create, modify, delete) on specified paths.
+- **Debouncer / Timer Engine**: Smart filter. Applications often save files in bursts (multiple events per second). The engine waits for a "silence" period (e.g., 5 seconds with no changes) before releasing the task execution.
+- **Task Dispatcher**: Executor. A queue of customizable tasks that receives the validated trigger and runs the defined routine (e.g., compress to .zip, send to OneDrive).
 
-### 2. Stack Tecnológica (Go)
+### 2. Tech Stack (Go)
 
-- **Go**: Binário único e estático, baixo consumo de RAM, excelente suporte a concorrência (goroutines).
-- **fsnotify**: Biblioteca padrão para monitoramento de eventos de arquivos de forma multiplataforma (ReadDirectoryChangesW no Windows, inotify no Linux).
-- **Configuração**: Scripts `.ggs` (DSL declarativa) + `guards.json` (configuração privada por rotina).
+- **Go**: Single static binary, low RAM usage, excellent concurrency support (goroutines).
+- **fsnotify**: Standard library for cross-platform file event monitoring (ReadDirectoryChangesW on Windows, inotify on Linux).
+- **Configuration**: `.ggs` scripts (declarative DSL) + `guards.json` (per-routine private configuration).
 
-### 3. Fluxo de Execução
+### 3. Execution Flow
 
-1. **Inicialização**: O binário lê o script `.ggs` e o `guards.json` com as regras de monitoramento.
-2. **Registro de Watchers**: Para o diretório alvo, o Go inicia uma goroutine usando o fsnotify (suporte a subdiretórios recursivo).
-3. **Captura de Eventos**: O sistema de arquivos dispara eventos de modificação (WRITE / CREATE).
-4. **Debounce**: O evento cancela o timer anterior e reinicia a contagem. Se novos eventos chegarem, o timer é resetado. Quando o timer zera (fim da rajada de alterações), o evento consolidado é enviado para a fila de tarefas.
-5. **Disparo da Tarefa**: O Dispatcher executa as ações configuradas (ex: zip, mensagem de log) com as variáveis resolvidas.
+1. **Initialization**: The binary reads the `.ggs` script and `guards.json` with the monitoring rules.
+2. **Watcher Registration**: For the target directory, Go starts a goroutine using fsnotify (recursive subdirectory support).
+3. **Event Capture**: The filesystem fires modification events (WRITE / CREATE).
+4. **Debounce**: The event cancels the previous timer and restarts the count. If new events arrive, the timer is reset. When the timer hits zero (end of the change burst), the consolidated event is sent to the task queue.
+5. **Task Dispatch**: The Dispatcher executes the configured actions (e.g., zip, log message) with resolved variables.
 
-### 4. Exemplo de Script (.ggs)
+### 4. Script Example (.ggs)
 
 ```nidx
-# Rotina de backup
+# Backup routine
 
-guard "Meu Backup"
+guard "My Backup"
 version 1.0
 os windows
 
 watch "{home}/Documents/Projetos"
 debounce 5s
-zip {backup}/projetos-{timestamp}.zip {watch}
-message "Backup salvo em \"{backup}\""
+zip {dest}/projetos-{timestamp}.zip {watch}
+message "Backup saved at \"{dest}\""
 ```
 
-### 5. Uso
+### 5. Usage
 
 ```
 gguard -script example\backup.ggs -config example\guards.json
 ```
 
-### 6. Variáveis de Contexto
+### 6. Context Variables
 
-| Variável | Resolve para |
+| Variable | Resolves to |
 |----------|-------------|
-| `{home}` | Diretório home do usuário |
-| `{watch}` | Caminho monitorado |
-| `{dest}` | Destino do backup/sync (de `guards.json`) |
-| `{timestamp}` | Data/hora atual (`2026-09-23_12-30-00`) |
-| `{file}` | Nome do arquivo que disparou o evento |
+| `{home}` | User's home directory |
+| `{watch}` | Monitored path |
+| `{dest}` | Backup/sync destination (from `guards.json`) |
+| `{timestamp}` | Current date/time (`2026-09-23_12-30-00`) |
+| `{file}` | Name of the file that triggered the event |
 
-### 7. Comandos Disponíveis
+### 7. Available Commands
 
-| Comando | Descrição |
-|---------|-----------|
-| `guard` | Nome da rotina (obrigatório) |
-| `version` | Versão da rotina (obrigatório) |
-| `os` | Sistema alvo: `windows`, `linux`, `darwin` |
-| `watch` | Diretório a ser monitorado (caminho absoluto ou com `{home}`) |
-| `debounce` | Tempo de silêncio após o último evento (ex: `5s`, `10s`, `1m`) |
-| `zip` | Compacta `{origem}` em `{destino}.zip` |
-| `sync` | Sincroniza `{origem}` → `{destino}` (incremental) |
-| `sync --delete` | Sync + remove órfãos (requer `trusted`) |
-| `sync --bidir` | Sync bidirecional (copía nos dois sentidos) |
-| `sync --bidir --delete` | Sync bidirecional com remoção de órfãos |
-| `message` | Log / notificação pós-execução |
+| Command | Description |
+|---------|-------------|
+| `guard` | Routine name (required) |
+| `version` | Routine version (required) |
+| `os` | Target system: `windows`, `linux`, `darwin` |
+| `watch` | Directory to monitor (absolute path or with `{home}`) |
+| `debounce` | Silence time after the last event (e.g., `5s`, `10s`, `1m`) |
+| `zip` | Compresses `{source}` into `{destination}.zip` |
+| `sync` | Syncs `{source}` → `{destination}` (incremental) |
+| `sync --delete` | Sync + removes orphans (requires `trusted`) |
+| `sync --bidir` | Bidirectional sync (copies both ways) |
+| `sync --bidir --delete` | Bidirectional sync with orphan removal |
+| `message` | Post-execution log / notification |
 
-### 8. Configurações do guards.json
+### 8. guards.json Settings
 
-| Campo | Descrição |
-|-------|-----------|
-| `dest` | Pasta destino |
-| `trusted` | Permite comandos sensíveis (limpeza de backups) |
-| `autostart` | Inicia com `gg-launcher.exe` |
-| `free_cache` | Libera cache OneDrive após (ex: `"1h"`) |
-| `keep_backups` | Máximo de zips mantidos (requer `trusted`) |
-| `delete_older_than` | Remove zips mais velhos (ex: `"7d"`) |
+| Field | Description |
+|-------|-------------|
+| `dest` | Destination folder |
+| `trusted` | Allows sensitive commands (backup cleanup) |
+| `autostart` | Starts with `gg-launcher.exe` |
+| `free_cache` | Releases OneDrive cache after (e.g., `"1h"`) |
+| `keep_backups` | Max zips kept (requires `trusted`) |
+| `delete_older_than` | Removes zips older than (e.g., `"7d"`) |

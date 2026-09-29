@@ -1,57 +1,57 @@
 # GG Script
 
-GG Script é a DSL (Domain-Specific Language) do GopherGuard para definir rotinas de monitoramento e backup.
+GG Script is GopherGuard's DSL (Domain-Specific Language) for defining monitoring and backup routines.
 
-### Exemplo:
+### Example:
 
 `backup.ggs`
 
 ```nidx
-# Rotina de backup
+# Backup routine
 
-guard "Meu Backup"
+guard "My Backup"
 version 1.0
 os windows
 
 watch "{home}/Documents/Projetos"
 debounce 5s
-zip {backup}/projetos-{timestamp}.zip {watch}
-message "Backup salvo em \"{backup}\""
+zip {dest}/projetos-{timestamp}.zip {watch}
+message "Backup saved at \"{dest}\""
 ```
 
-### Linha a linha:
+### Line by line:
 
-| Linha	| O que é |
-|-------|---------|
-| `guard "Meu Backup"` | Cabeçalho obrigatório. Nome da rotina |
-| `version 1.0` | Cabeçalho obrigatório. Versão da rotina |
-| `os windows` | Cabeçalho obrigatório. Sistema alvo |
-| `watch "..."` | Registra um watcher recursivo nesse diretório |
-| `debounce 5s` | Tempo de silêncio após o último evento antes de disparar |
-| `zip <destino.zip> <origem>` | Comando de compactação ZIP |
-| `sync <destino> <origem>` | Sincronização incremental (copia só arquivos novos/alterados) |
-| `sync <destino> <origem> --delete` | Sync com remoção de órfãos (requer `trusted: true`) |
-| `sync <destino> <origem> --bidir` | Sync bidirecional (copia nos dois sentidos) |
-| `sync <destino> <origem> --bidir --delete` | Sync bidirecional com remoção de órfãos |
-| `message "..."` | Log/notificação pós-execução |
+| Line | What it is |
+|------|------------|
+| `guard "My Backup"` | Required header. Routine name |
+| `version 1.0` | Required header. Routine version |
+| `os windows` | Required header. Target system |
+| `watch "..."` | Registers a recursive watcher on this directory |
+| `debounce 5s` | Silence time after the last event before triggering |
+| `zip <destination.zip> <source>` | ZIP compression command |
+| `sync <destination> <source>` | Incremental sync (copies only new/changed files) |
+| `sync <destination> <source> --delete` | Sync with orphan removal (requires `trusted: true`) |
+| `sync <destination> <source> --bidir` | Bidirectional sync (copies both ways) |
+| `sync <destination> <source> --bidir --delete` | Bidirectional sync with orphan removal |
+| `message "..."` | Post-execution log/notification |
 
-### Variáveis disponíveis no contexto:
+### Available context variables:
 
-| Variável | Resolve para | De onde vem |
-|----------|-------------|-------------|
-| `{watch}` | O path do watch ativo | engine injeta na hora do disparo |
-| `{dest}` | Pasta destino | config global do gguard (`guards.json`) |
-| `{timestamp}` | Ex: `2026-09-23_14-30-05` | engine gera no momento do disparo |
-| `{file}` | Nome do arquivo que acionou o evento | engine injeta (opcional, se houver 1 arquivo) |
-| `{nome}` | Qualquer chave extra do `guards.json` | config global |
+| Variable | Resolves to | Source |
+|----------|-------------|--------|
+| `{watch}` | The active watch path | engine injects at dispatch time |
+| `{dest}` | Destination folder | gguard global config (`guards.json`) |
+| `{timestamp}` | E.g., `2026-09-23_14-30-05` | engine generates at dispatch time |
+| `{file}` | Name of the file that triggered the event | engine injects (optional, if there is 1 file) |
+| `{name}` | Any extra key from `guards.json` | global config |
 
-### Configurações do guards.json
+### guards.json Settings
 
-| Campo | Tipo | Descrição |
-|-------|------|-----------|
-| `dest` | string | Pasta destino para backup/sync |
-| `trusted` | bool | Permite comandos sensíveis (ex: deletar backups antigos) |
-| `autostart` | bool | Inicia automaticamente ao abrir o gg-launcher |
-| `free_cache` | string | Delay para liberar cache do OneDrive (ex: `"1h"`, `"30m"`) |
-| `keep_backups` | int | Máximo de zips mantidos (requer `trusted: true`) |
-| `delete_older_than` | string | Deleta zips mais velhos que (ex: `"7d"`, `"24h"`) |
+| Field | Type | Description |
+|-------|------|-------------|
+| `dest` | string | Destination folder for backup/sync |
+| `trusted` | bool | Allows sensitive commands (e.g., delete old backups) |
+| `autostart` | bool | Automatically starts when gg-launcher opens |
+| `free_cache` | string | Delay to release OneDrive cache (e.g., `"1h"`, `"30m"`) |
+| `keep_backups` | int | Maximum zips kept (requires `trusted: true`) |
+| `delete_older_than` | string | Deletes zips older than (e.g., `"7d"`, `"24h"`) |
