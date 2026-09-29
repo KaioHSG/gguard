@@ -1,5 +1,5 @@
 dist
-#*.syso
+*.syso
 gg-launcher.exe
 gguard
 gguard.exe
