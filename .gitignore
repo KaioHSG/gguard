@@ -1,10 +1,11 @@
+dist
 *.syso
 gg-launcher.exe
+gguard
 gguard.exe
 gguard.pid
 gguard.status.json
 gguard.log
 
 gg-scripts
-ai_session.json
 guards.json

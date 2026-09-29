@@ -1,0 +1,48 @@
+name: Build Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+
+      - name: Build
+        run: bash build.sh --dist
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: "GopherGuard - ${{ steps.version.outputs.tag }}"
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: |
+            dist/GopherGuard-Linux-ARM.tar.gz
+            dist/GopherGuard-Linux-x64.tar.gz
+            dist/GopherGuard-Windows-ARM.zip
+            dist/GopherGuard-Windows-x64.zip
+          generate_release_notes: true
