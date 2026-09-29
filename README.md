@@ -42,7 +42,7 @@ message "Backup saved at \"{dest}\""
 ### 5. Usage
 
 ```
-gguard -script example\backup.ggs -config example\guards.json
+gguard -script example/backup.ggs -config example/guards.json
 ```
 
 ### 6. Context Variables
