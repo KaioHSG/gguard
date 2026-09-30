@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kardianos/service"
@@ -87,10 +88,10 @@ func buildService(p *program, cfg *serviceConfig) service.Service {
 	return s
 }
 
-func serviceControl(s service.Service, action string) {
+func serviceControl(s service.Service, action string) error {
 	err := service.Control(s, action)
 	if err != nil {
-		log.Fatalf("gguard %s: %v", action, err)
+		return fmt.Errorf("gguard %s: %w", action, err)
 	}
 
 	switch action {
@@ -106,18 +107,37 @@ func serviceControl(s service.Service, action string) {
 		time.Sleep(2 * time.Second)
 		status, err := s.Status()
 		if err != nil {
-			log.Println("gguard service start requested (could not verify status)")
-			return
+			fmt.Fprintf(os.Stderr, "gguard: service start requested but status check failed: %v\n", err)
+			fmt.Fprintln(os.Stderr, "Check gguard.log for details.")
+			return nil
 		}
 		switch status {
 		case service.StatusRunning:
 			log.Println("gguard service started.")
 		case service.StatusStopped:
-			log.Println("gguard service failed to start. Check gguard.log for details.")
+			exeDir := exeDir()
+			logFile := filepath.Join(exeDir, "gguard.log")
+			fmt.Fprintln(os.Stderr, "gguard service failed to start.")
+			fmt.Fprintf(os.Stderr, "Check gguard.log for details (%s)\n", logFile)
+			if data, err := os.ReadFile(logFile); err == nil {
+				lines := strings.Split(string(data), "\n")
+				start := len(lines) - 5
+				if start < 0 {
+					start = 0
+				}
+				fmt.Fprintln(os.Stderr, "Last log entries:")
+				for _, l := range lines[start:] {
+					if l != "" {
+						fmt.Fprintf(os.Stderr, "  %s\n", l)
+					}
+				}
+			}
 		default:
 			log.Println("gguard service status unknown.")
 		}
 	}
+
+	return nil
 }
 
 func statusMessage(status service.Status) string {
@@ -157,10 +177,3 @@ func setupServiceLog(exeDir string) {
 	}
 }
 
-func logServiceStart() {
-	fmt.Fprintln(os.Stderr, "gguard: running as a system service - logs in gguard.log")
-}
-
-func logServiceStop() {
-	log.Println("gguard service: shutting down...")
-}

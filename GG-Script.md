@@ -45,6 +45,21 @@ message "Backup saved at \"{dest}\""
 | `{file}` | Name of the file that triggered the event | engine injects (optional, if there is 1 file) |
 | `{name}` | Any extra key from `guards.json` | global config |
 
+### Script Locations
+
+Scripts are loaded from different directories depending on the installation mode:
+
+| Installation | Script directory |
+|-------------|------------------|
+| **System** (admin) | `%ProgramFiles%\GopherGuard\gg-scripts\` (Windows) |
+| **System** (admin) | `/usr/local/bin/gg-scripts/` (Linux) |
+| **User** (no admin) | `%APPDATA%\Programs\GopherGuard\gg-scripts\` (Windows) |
+| **User** (no admin) | `~/.local/bin/gg-scripts/` (Linux) |
+
+When the **system service** runs, it also loads scripts from the **active user's** config directory (the person currently logged in at the console). This allows each user to have personal backup scripts without needing admin privileges.
+
+To import a script: `gguard --import backup.ggs` (copies to the correct directory automatically).
+
 ### guards.json Settings
 
 | Field | Type | Description |

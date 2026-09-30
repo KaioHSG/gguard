@@ -39,26 +39,113 @@ zip {dest}/projetos-{timestamp}.zip {watch}
 message "Backup saved at \"{dest}\""
 ```
 
-### 5. Installation & Usage
+### 5. Installation
 
-```
-# Download and run
-gguard -s example/backup.ggs -g example/guards.json
+#### System-wide (requires admin)
 
-# Install as a system service (copies to standard location + adds to PATH)
-gguard --install
-gguard --start
-gguard --status
-
-# Or install as a per-user service (Linux: adds .desktop entry + icon)
-gguard --install --user
-gguard --start
-gguard --status
+```powershell
+# Windows (Run as Administrator)
+.\gguard.exe --install
+.\gguard.exe --start
+.\gguard.exe --status
+.\gguard.exe --stop
 ```
 
-On Linux, `--install` also registers a `.desktop` entry and icon, so GopherGuard appears in your application launcher.
+```bash
+# Linux (with sudo)
+sudo ./gguard --install
+sudo ./gguard --start
+sudo ./gguard --status
+sudo ./gguard --stop
+```
 
-### 6. Context Variables
+Installs to:
+- **Windows**: `%ProgramFiles%\GopherGuard\gguard.exe`
+- **Linux**: `/usr/local/bin/gguard`
+
+Adds to system PATH, registers as a system service (`gguard`), creates Start Menu shortcut (Windows) / desktop entry (Linux).
+
+#### Per-user (no admin required)
+
+```powershell
+.\gguard.exe --install --user
+.\gguard.exe --start --user
+```
+
+Installs to:
+- **Windows**: `%APPDATA%\Programs\GopherGuard\gguard.exe`
+- **Linux**: `~/.local/bin/gguard`
+
+Registers as a user service (`gguard-user`), runs under your account while logged in.
+
+### 6. Service Management (Auto-detect Mode)
+
+Commands auto-detect whether you need the system or user service based on your privileges:
+
+| Command | Without `--user` | With `--user` |
+|---------|------------------|---------------|
+| `--install` | **system** (needs admin) | **user** (no admin) |
+| `--start` | **system** (needs admin) | **user** |
+| `--stop` | **system** (needs admin) | **user** |
+| `--restart` | **system** (needs admin) | **user** |
+| `--status` | **system** (no admin needed) | **user** |
+| `--import` | **system** (if admin) / **user** (if not) | **user** |
+| `--export` | **system** (if admin) / **user** (if not) | **user** |
+
+```
+# As a regular user — operates on your user service
+gguard --status
+
+# As admin — operates on system service
+sudo gguard --status
+
+# Explicit user override (even if running as admin)
+sudo gguard --status --user
+```
+
+### 7. Multi-User Config (System Service)
+
+When running as a **system service**, gguard automatically detects who is logged in at the console and loads their personal config on top of the global config:
+
+```
+Config layers (system service):
+
+  Global (admin only):
+    %ProgramFiles%\GopherGuard\gg-scripts\*.ggs
+    %ProgramFiles%\GopherGuard\guards.json
+
+  Current user (no admin needed):
+    %APPDATA%\Programs\GopherGuard\gg-scripts\*.ggs
+    %APPDATA%\Programs\GopherGuard\guards.json
+```
+
+- The admin places **global** scripts everyone should run
+- Each user places their **personal** scripts in their own AppData (no admin required)
+- The system service (running as SYSTEM) loads and runs both
+
+### 8. Import / Export
+
+```powershell
+# Import a .ggs script (copies to the correct directory)
+gguard --import backup.ggs
+
+# Import a guards.json (merges with existing, never loses existing keys)
+gguard --import config.json
+
+# Export current scripts and config (lists paths)
+gguard --export
+```
+
+The target directory depends on mode:
+- **System mode** (admin): `%ProgramFiles%\GopherGuard`
+- **User mode** (non-admin or `--user`): `%APPDATA%\Programs\GopherGuard`
+
+Import merge behavior for `guards.json`:
+- Existing keys not present in the import are **preserved**
+- Keys present in the import are **fully replaced**
+- Never overwrites the entire file
+
+### 9. Context Variables
 
 | Variable | Resolves to |
 |----------|-------------|
@@ -68,7 +155,7 @@ On Linux, `--install` also registers a `.desktop` entry and icon, so GopherGuard
 | `{timestamp}` | Current date/time (`2026-09-23_12-30-00`) |
 | `{file}` | Name of the file that triggered the event |
 
-### 7. Available Commands
+### 10. Available Commands
 
 | Command | Description |
 |---------|-------------|
@@ -84,7 +171,7 @@ On Linux, `--install` also registers a `.desktop` entry and icon, so GopherGuard
 | `sync --bidir --delete` | Bidirectional sync with orphan removal |
 | `message` | Post-execution log / notification |
 
-### 8. guards.json Settings
+### 11. guards.json Settings
 
 | Field | Description |
 |-------|-------------|
@@ -94,3 +181,11 @@ On Linux, `--install` also registers a `.desktop` entry and icon, so GopherGuard
 | `free_cache` | Releases OneDrive cache after (e.g., `"1h"`) |
 | `keep_backups` | Max zips kept (requires `trusted`) |
 | `delete_older_than` | Removes zips older than (e.g., `"7d"`) |
+
+### 12. Logging
+
+When running as a service, logs are written to `gguard.log` in the install directory:
+- **System**: `%ProgramFiles%\GopherGuard\gguard.log`
+- **User**: `%APPDATA%\Programs\GopherGuard\gguard.log`
+
+Use `-q` or `--quiet` to force log-to-file in foreground mode.

@@ -1,7 +1,6 @@
 #!/bin/bash
 
-VERSION="${VERSION:-0.2.0}"
-LDFLAGS="-s -w -X main.Version=${VERSION}"
+LDFLAGS="-s -w"
 BUILD_ALL=false
 
 for arg in "$@"; do

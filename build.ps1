@@ -2,8 +2,7 @@ param(
     [switch]$Dist
 )
 
-$env:VERSION = if ($env:VERSION) { $env:VERSION } else { "0.2.0" }
-$ldflags = "-s -w -X main.Version=$env:VERSION"
+$ldflags = "-s -w"
 
 if ($Dist) {
     go-winres make --arch amd64,arm64

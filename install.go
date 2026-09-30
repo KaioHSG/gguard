@@ -136,7 +136,8 @@ func doInstall(userService bool) {
 	}
 
 	if !hasScripts {
-		log.Fatal("no scripts found. Create a gg-scripts/ directory or use --scripts to specify scripts.")
+		log.Println("gguard: no scripts found. Install will complete without scripts.")
+		log.Println("Place .ggs files in gg-scripts/ after install and restart the service.")
 	}
 	_ = hasGuards
 
@@ -159,7 +160,9 @@ func doInstall(userService bool) {
 	}
 
 	s := buildService(prg, cfg)
-	serviceControl(s, "install")
+	if err := serviceControl(s, "install"); err != nil {
+		log.Printf("warning: %v", err)
+	}
 
 	if err := installDesktopEntry(targetDir, !userService); err != nil {
 		log.Printf("warning: cannot install desktop entry: %v", err)
@@ -215,7 +218,9 @@ func doUninstall(userService bool) {
 	}
 
 	s := buildService(prg, cfg)
-	serviceControl(s, "uninstall")
+	if err := serviceControl(s, "uninstall"); err != nil {
+		log.Printf("warning: %v", err)
+	}
 
 	if err := uninstallDesktopEntry(!userService); err != nil {
 		log.Printf("warning: cannot remove desktop entry: %v", err)

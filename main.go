@@ -20,7 +20,7 @@ import (
 	"github.com/kardianos/service"
 )
 
-var Version = "0.2.0-dev"
+var Version = "0.2.1"
 
 var (
 	statusFlag    bool
@@ -33,6 +33,8 @@ var (
 	userFlag      bool
 	versionFlag   bool
 	upgradeFlag   bool
+	importFlag    string
+	exportFlag    bool
 	scriptsFlag   scriptsList
 	guardsFlag    string
 )
@@ -69,10 +71,12 @@ func init() {
 	flag.BoolVar(&uninstallFlag, "uninstall", false, "Uninstall the service (use --user for per-user)")
 	flag.BoolVar(&startFlag, "start", false, "Start the service")
 	flag.BoolVar(&restartFlag, "restart", false, "Restart the service")
-	flag.BoolVar(&userFlag, "user", false, "Install/uninstall as a per-user service (no admin required)")
+	flag.BoolVar(&userFlag, "user", false, "Force user mode (override auto-detect)")
 	flag.BoolVar(&versionFlag, "version", false, "Show version")
 	flag.BoolVar(&versionFlag, "v", false, "")
 	flag.BoolVar(&upgradeFlag, "upgrade", false, "Upgrade existing installation")
+	flag.StringVar(&importFlag, "import", "", "Import a .ggs script or guards.json")
+	flag.BoolVar(&exportFlag, "export", false, "Export all .ggs scripts and guards.json")
 	flag.Var(&scriptsFlag, "scripts", ".ggs file or directory")
 	flag.Var(&scriptsFlag, "s", "")
 	flag.Var(&scriptsFlag, "script", "")
@@ -91,6 +95,8 @@ Usage:
   gguard --stop
   gguard --restart
   gguard --status
+  gguard --import <file.ggs|guards.json>
+  gguard --export
   gguard --version
   gguard --help
 
@@ -109,9 +115,14 @@ Service Management:
   --stop              Stop the service
   --restart           Restart the service
   --status            Show service status and active guards
-  --user              Install/uninstall as per-user (no admin for user install)
+
+Import/Export:
+  --import <file>     Import a .ggs script or guards.json (merge)
+  --export            Export all .ggs scripts and guards.json
 
 Flags:
+  --user              Force user mode (override auto-detect).
+                      Without --user, mode is auto-detected: admin=system, user=user.
 `)
 		flag.PrintDefaults()
 	}
@@ -145,19 +156,37 @@ func main() {
 		return
 	}
 
+	if importFlag != "" {
+		mode := targetMode(userFlag)
+		doImport(importFlag, mode)
+		return
+	}
+	if exportFlag {
+		mode := targetMode(userFlag)
+		doExport(mode)
+		return
+	}
+
 	prg := &program{}
-	s := newService(prg, userFlag)
+	mode := targetMode(userFlag)
+	s := newService(prg, mode == "user")
 
 	if startFlag {
-		serviceControl(s, "start")
+		if err := serviceControl(s, "start"); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 	if stopFlag {
-		serviceControl(s, "stop")
+		if err := serviceControl(s, "stop"); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 	if restartFlag {
-		serviceControl(s, "restart")
+		if err := serviceControl(s, "restart"); err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 
@@ -167,11 +196,10 @@ func main() {
 	}
 
 	if isServiceManager() {
-		logServiceStart()
+		setupServiceLog(exeDir())
 		if err := s.Run(); err != nil {
 			log.Fatal(err)
 		}
-		logServiceStop()
 		return
 	}
 
@@ -184,9 +212,7 @@ func runGuards(ctx context.Context) {
 	exeDir := exeDir()
 	statusPath := filepath.Join(exeDir, "gguard.status.json")
 
-	if isServiceMode() && !quietFlag {
-		setupServiceLog(exeDir)
-	} else if quietFlag {
+	if !isServiceMode() && quietFlag {
 		logFile := filepath.Join(exeDir, "gguard.log")
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err == nil {
@@ -194,23 +220,34 @@ func runGuards(ctx context.Context) {
 		}
 	}
 
-	scripts := scriptsFlag
-	autoStart := len(scripts) == 0
+	var allScriptDirs []string
+	globalConfigPath := resolveGuardsPath(guardsFlag, exeDir)
 
-	if autoStart {
-		scripts = []string{filepath.Join(exeDir, "gg-scripts")}
+	// Global scripts
+	if len(scriptsFlag) > 0 {
+		allScriptDirs = append(allScriptDirs, scriptsFlag...)
+	} else {
+		allScriptDirs = append(allScriptDirs, filepath.Join(exeDir, "gg-scripts"))
 	}
 
-	configPath := resolveGuardsPath(guardsFlag, exeDir)
-	scriptPaths := resolveScripts(scripts)
-
-	if autoStart {
-		scriptPaths = filterAutostart(configPath, scriptPaths)
-		if len(scriptPaths) == 0 {
-			log.Fatal("no autostart routines found in guards.json")
+	// Active user scripts (system service mode only)
+	userConfigPath := ""
+	if isServiceMode() {
+		if userDir := activeUserConfigDir(); userDir != "" {
+			userScriptsDir := filepath.Join(userDir, "gg-scripts")
+			if _, err := os.Stat(userScriptsDir); err == nil {
+				allScriptDirs = append(allScriptDirs, userScriptsDir)
+				userConfigPath = filepath.Join(userDir, "guards.json")
+				log.Printf("gguard: loading user scripts from %s", userScriptsDir)
+			}
 		}
-	} else if len(scriptPaths) == 0 {
-		log.Fatal("no .ggs scripts found")
+	}
+
+	scriptPaths := resolveScripts(allScriptDirs)
+
+	if len(scriptsFlag) == 0 {
+		// auto-start mode: filter by autostart from global config
+		scriptPaths = filterAutostart(globalConfigPath, scriptPaths)
 	}
 
 	home := userHomeDir()
@@ -222,49 +259,70 @@ func runGuards(ctx context.Context) {
 
 	var instances []instance
 	var statusEntries []statusEntry
-	ctx2, cancel2 := context.WithCancel(ctx)
-	defer cancel2()
 
-	for _, path := range scriptPaths {
-		data, err := os.ReadFile(path)
-		if err != nil {
-			log.Printf("skipping %s: %v", path, err)
-			continue
+	// Determine user config dir for path matching
+	userCfgDir := ""
+	if userConfigPath != "" {
+		userCfgDir = filepath.Dir(userConfigPath)
+	}
+
+	if len(scriptPaths) > 0 {
+		ctx2, cancel2 := context.WithCancel(ctx)
+		defer cancel2()
+
+		for _, path := range scriptPaths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				log.Printf("skipping %s: %v", path, err)
+				continue
+			}
+
+			guard, err := ggs.Parse(string(data))
+			if err != nil {
+				log.Printf("skipping %s: parse error: %v", path, err)
+				continue
+			}
+
+			if guard.OS != "" && guard.OS != runtimeOS() {
+				log.Printf("skipping %q: targets OS %q but current OS is %q", guard.Name, guard.OS, runtimeOS())
+				continue
+			}
+
+			// Use user config if script is inside user's config dir
+			cfg := globalConfigPath
+			if userCfgDir != "" && strings.HasPrefix(path, userCfgDir) {
+				cfg = userConfigPath
+			}
+
+			key := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			vars := loadConfig(cfg, key)
+			vars["home"] = home
+
+			eng, err := engine.New(guard, vars)
+			if err != nil {
+				log.Printf("skipping %q: %v", guard.Name, err)
+				continue
+			}
+
+			eng.Start(ctx2)
+			instances = append(instances, instance{eng: eng, name: guard.Name})
+			statusEntries = append(statusEntries, statusEntry{Name: guard.Name, Watch: eng.Watch()})
+			log.Printf("gguard: monitoring %q for %q", guard.Watch, guard.Name)
 		}
 
-		guard, err := ggs.Parse(string(data))
-		if err != nil {
-			log.Printf("skipping %s: parse error: %v", path, err)
-			continue
+		if len(instances) > 0 {
+			writeStatus(statusPath, statusEntries)
+			log.Printf("gguard: %d guard(s) running", len(instances))
 		}
-
-		if guard.OS != "" && guard.OS != runtimeOS() {
-			log.Printf("skipping %q: targets OS %q but current OS is %q", guard.Name, guard.OS, runtimeOS())
-			continue
-		}
-
-		key := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-		vars := loadConfig(configPath, key)
-		vars["home"] = home
-
-		eng, err := engine.New(guard, vars)
-		if err != nil {
-			log.Printf("skipping %q: %v", guard.Name, err)
-			continue
-		}
-
-		eng.Start(ctx2)
-		instances = append(instances, instance{eng: eng, name: guard.Name})
-		statusEntries = append(statusEntries, statusEntry{Name: guard.Name, Watch: eng.Watch()})
-		log.Printf("gguard: monitoring %q for %q", guard.Watch, guard.Name)
 	}
 
 	if len(instances) == 0 {
-		log.Fatal("no guards started")
+		if isServiceMode() {
+			log.Println("gguard: no scripts found. Add .ggs files and restart the service.")
+		} else {
+			log.Fatal("no scripts found. Create a gg-scripts/ directory or use --scripts.")
+		}
 	}
-
-	writeStatus(statusPath, statusEntries)
-	log.Printf("gguard: %d guard(s) running", len(instances))
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -372,7 +430,8 @@ func resolveScripts(paths []string) []string {
 	for _, path := range paths {
 		info, err := os.Stat(path)
 		if err != nil {
-			log.Fatalf("cannot access %s: %v", path, err)
+			log.Printf("warning: scripts path not found: %s", path)
+			continue
 		}
 
 		if !info.IsDir() {
@@ -382,7 +441,8 @@ func resolveScripts(paths []string) []string {
 
 		entries, err := os.ReadDir(path)
 		if err != nil {
-			log.Fatalf("cannot read scripts dir %s: %v", path, err)
+			log.Printf("warning: cannot read scripts dir %s: %v", path, err)
+			continue
 		}
 
 		for _, e := range entries {
@@ -463,4 +523,115 @@ func writeStatus(path string, entries []statusEntry) {
 
 func runtimeOS() string {
 	return runtime.GOOS
+}
+
+func targetMode(userFlag bool) string {
+	if userFlag {
+		return "user"
+	}
+	if isAdmin() {
+		return "system"
+	}
+	return "user"
+}
+
+func configDir(mode string) string {
+	if mode == "system" {
+		return installTargetDir(false)
+	}
+	return userConfigDir()
+}
+
+func doImport(src, mode string) {
+	if src == "" {
+		log.Fatal("import requires a file path")
+	}
+
+	info, err := os.Stat(src)
+	if err != nil {
+		log.Fatalf("cannot access %s: %v", src, err)
+	}
+	if info.IsDir() {
+		log.Fatal("cannot import a directory")
+	}
+
+	target := configDir(mode)
+	ext := strings.ToLower(filepath.Ext(src))
+	base := filepath.Base(src)
+
+	switch ext {
+	case ".ggs":
+		scriptsDir := filepath.Join(target, "gg-scripts")
+		if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+			log.Fatalf("cannot create scripts directory: %v", err)
+		}
+		dst := filepath.Join(scriptsDir, base)
+		if err := copyFile(src, dst); err != nil {
+			log.Fatalf("cannot import script: %v", err)
+		}
+		fmt.Printf("imported %s -> %s\n", base, dst)
+
+	case ".json":
+		importedData, err := os.ReadFile(src)
+		if err != nil {
+			log.Fatalf("cannot read %s: %v", src, err)
+		}
+
+		var imported map[string]map[string]interface{}
+		if err := json.Unmarshal(importedData, &imported); err != nil {
+			log.Fatalf("invalid guards.json format: %v", err)
+		}
+
+		configPath := filepath.Join(target, "guards.json")
+		var existing map[string]map[string]interface{}
+
+		if data, err := os.ReadFile(configPath); err == nil {
+			json.Unmarshal(data, &existing)
+		}
+		if existing == nil {
+			existing = make(map[string]map[string]interface{})
+		}
+
+		for k, v := range imported {
+			existing[k] = v
+		}
+
+		out, _ := json.MarshalIndent(existing, "", "  ")
+		if err := os.WriteFile(configPath, out, 0644); err != nil {
+			log.Fatalf("cannot write guards.json: %v", err)
+		}
+		fmt.Printf("merged %d routine(s) into %s\n", len(imported), configPath)
+
+	default:
+		log.Fatalf("unsupported file type: %s (use .ggs or .json)", ext)
+	}
+}
+
+func doExport(mode string) {
+	source := configDir(mode)
+
+	scriptsDir := filepath.Join(source, "gg-scripts")
+	if info, err := os.Stat(scriptsDir); err != nil || !info.IsDir() {
+		log.Fatal("no scripts to export")
+	}
+
+	entries, err := os.ReadDir(scriptsDir)
+	if err != nil {
+		log.Fatalf("cannot read scripts directory: %v", err)
+	}
+
+	fmt.Println("Scripts:")
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".ggs") {
+			fmt.Printf("  %s\n", filepath.Join(scriptsDir, e.Name()))
+		}
+	}
+
+	configPath := filepath.Join(source, "guards.json")
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf("Config: %s\n", configPath)
+	}
+
+	fmt.Println()
+	fmt.Printf("To export as zip, copy the contents of:\n  %s\n", source)
 }

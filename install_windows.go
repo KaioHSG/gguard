@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -66,7 +67,9 @@ func addToPath(targetDir string, system bool) error {
 	var rootKey registry.Key
 	access := uint32(registry.QUERY_VALUE | registry.SET_VALUE)
 
+	label := "user"
 	if system {
+		label = "system"
 		rootKey = registry.LOCAL_MACHINE
 		keyPath = `SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
 	} else {
@@ -76,37 +79,41 @@ func addToPath(targetDir string, system bool) error {
 
 	key, err := registry.OpenKey(rootKey, keyPath, access)
 	if err != nil {
-		return fmt.Errorf("cannot open PATH registry key: %w", err)
+		return fmt.Errorf("cannot open %s PATH registry key: %w", label, err)
 	}
 	defer key.Close()
 
-	existing, _, err := key.GetStringValue("Path")
+	targetAbs, _ := filepath.Abs(targetDir)
+
+	existing, valType, err := key.GetStringValue("Path")
 	if err != nil && err != registry.ErrNotExist {
-		return fmt.Errorf("cannot read PATH: %w", err)
+		return fmt.Errorf("cannot read %s PATH: %w", label, err)
 	}
 
 	for _, entry := range filepath.SplitList(existing) {
-		if winPathEqual(entry, targetDir) {
+		if winPathEqual(entry, targetAbs) {
+			log.Printf("%s is already in %s PATH", targetDir, label)
 			return nil
 		}
 	}
 
 	newPath := existing
 	if newPath != "" {
-		newPath += ";" + targetDir
+		newPath += ";"
+	}
+	newPath += targetAbs
+
+	if valType == registry.EXPAND_SZ || system {
+		if err := key.SetExpandStringValue("Path", newPath); err != nil {
+			return fmt.Errorf("cannot update %s PATH: %w", label, err)
+		}
 	} else {
-		newPath = targetDir
+		if err := key.SetStringValue("Path", newPath); err != nil {
+			return fmt.Errorf("cannot update %s PATH: %w", label, err)
+		}
 	}
 
-	if err := key.SetStringValue("Path", newPath); err != nil {
-		return fmt.Errorf("cannot update PATH: %w", err)
-	}
-
-	label := "user"
-	if system {
-		label = "system"
-	}
-	log.Printf("added %s to %s PATH", targetDir, label)
+	fmt.Fprintf(os.Stderr, "gguard: added %s to %s PATH\n", targetDir, label)
 	broadcastEnvChange()
 	return nil
 }
@@ -130,27 +137,25 @@ func broadcastEnvChange() {
 }
 
 func removeFromPath(targetDir string, system bool) error {
-	var keyPath string
-	var rootKey registry.Key
-	access := uint32(registry.QUERY_VALUE | registry.SET_VALUE)
-
+	label := "user"
+	rootKey := registry.CURRENT_USER
+	keyPath := `Environment`
 	if system {
+		label = "system"
 		rootKey = registry.LOCAL_MACHINE
 		keyPath = `SYSTEM\CurrentControlSet\Control\Session Manager\Environment`
-	} else {
-		rootKey = registry.CURRENT_USER
-		keyPath = `Environment`
 	}
 
+	access := uint32(registry.QUERY_VALUE | registry.SET_VALUE)
 	key, err := registry.OpenKey(rootKey, keyPath, access)
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot open %s PATH registry key: %w", label, err)
 	}
 	defer key.Close()
 
-	existing, _, err := key.GetStringValue("Path")
+	existing, valType, err := key.GetStringValue("Path")
 	if err != nil {
-		return err
+		return fmt.Errorf("cannot read %s PATH: %w", label, err)
 	}
 
 	cleanTarget := winAbsClean(targetDir)
@@ -162,15 +167,18 @@ func removeFromPath(targetDir string, system bool) error {
 	}
 
 	newPath := strings.Join(keep, ";")
-	if err := key.SetStringValue("Path", newPath); err != nil {
-		return fmt.Errorf("cannot update PATH: %w", err)
+
+	if valType == registry.EXPAND_SZ || system {
+		if err := key.SetExpandStringValue("Path", newPath); err != nil {
+			return fmt.Errorf("cannot update %s PATH: %w", label, err)
+		}
+	} else {
+		if err := key.SetStringValue("Path", newPath); err != nil {
+			return fmt.Errorf("cannot update %s PATH: %w", label, err)
+		}
 	}
 
-	label := "user"
-	if system {
-		label = "system"
-	}
-	log.Printf("removed %s from %s PATH", targetDir, label)
+	fmt.Fprintf(os.Stderr, "gguard: removed %s from %s PATH\n", targetDir, label)
 	broadcastEnvChange()
 	return nil
 }
@@ -221,87 +229,9 @@ func installIcon(_ bool) error                     { return nil }
 func uninstallIcon(_ bool) error                   { return nil }
 
 func createShellLink(targetPath, shortcutPath, description string) error {
-	ole32 := syscall.NewLazyDLL("ole32.dll")
-	_ = syscall.NewLazyDLL("shell32.dll")
-
-	clsidLink, err := windows.GUIDFromString("{00021401-0000-0000-C000-000000000046}")
-	if err != nil {
-		return err
-	}
-	iidLink, err := windows.GUIDFromString("{000214F9-0000-0000-C000-000000000046}")
-	if err != nil {
-		return err
-	}
-	iidPersist, err := windows.GUIDFromString("{0000010B-0000-0000-C000-000000000046}")
-	if err != nil {
-		return err
-	}
-
-	procCoInitializeEx := ole32.NewProc("CoInitializeEx")
-	ret, _, _ := procCoInitializeEx.Call(0, 2)
-	if ret != 0 && ret != 1 {
-		return fmt.Errorf("CoInitializeEx failed: 0x%x", ret)
-	}
-	defer ole32.NewProc("CoUninitialize").Call()
-
-	procCoCreateInstance := ole32.NewProc("CoCreateInstance")
-	var pLink uintptr
-	ret, _, _ = procCoCreateInstance.Call(
-		uintptr(unsafe.Pointer(&clsidLink)),
-		0,
-		1,
-		uintptr(unsafe.Pointer(&iidLink)),
-		uintptr(unsafe.Pointer(&pLink)),
+	cmd := fmt.Sprintf(
+		`$ws=New-Object -ComObject WScript.Shell;$s=$ws.CreateShortcut('%s');$s.TargetPath='%s';$s.Description='%s';$s.Save()`,
+		shortcutPath, targetPath, strings.ReplaceAll(description, "'", "''"),
 	)
-	if ret != 0 {
-		return fmt.Errorf("CoCreateInstance failed: 0x%x", ret)
-	}
-	defer vcall(pLink, 2)
-
-	exePtr, _ := syscall.UTF16PtrFromString(targetPath)
-	vcall(pLink, 20, uintptr(unsafe.Pointer(exePtr)))
-
-	descPtr, _ := syscall.UTF16PtrFromString(description)
-	vcall(pLink, 7, uintptr(unsafe.Pointer(descPtr)))
-
-	iconPtr, _ := syscall.UTF16PtrFromString(targetPath)
-	vcall(pLink, 17, uintptr(unsafe.Pointer(iconPtr)), 0)
-
-	var pPersist uintptr
-	vcall(pLink, 0, uintptr(unsafe.Pointer(&iidPersist)), uintptr(unsafe.Pointer(&pPersist)))
-	if pPersist == 0 {
-		return fmt.Errorf("IPersistFile interface not supported")
-	}
-	defer vcall(pPersist, 2)
-
-	pathPtr, _ := syscall.UTF16PtrFromString(shortcutPath)
-	ret = vcall(pPersist, 6, uintptr(unsafe.Pointer(pathPtr)), 1)
-	if ret != 0 {
-		return fmt.Errorf("IPersistFile::Save failed: 0x%x", ret)
-	}
-
-	return nil
-}
-
-func vcall(obj uintptr, methodIndex int, args ...uintptr) uintptr {
-	vtbl := *(*uintptr)(unsafe.Pointer(obj))
-	offset := unsafe.Sizeof(uintptr(0)) * uintptr(methodIndex)
-	method := *(*uintptr)(unsafe.Add(unsafe.Pointer(vtbl), int(offset)))
-
-	switch len(args) {
-	case 0:
-		ret, _, _ := syscall.SyscallN(method, 1, obj)
-		return ret
-	case 1:
-		ret, _, _ := syscall.SyscallN(method, 2, obj, args[0])
-		return ret
-	case 2:
-		ret, _, _ := syscall.SyscallN(method, 3, obj, args[0], args[1])
-		return ret
-	case 3:
-		ret, _, _ := syscall.SyscallN(method, 4, obj, args[0], args[1], args[2])
-		return ret
-	default:
-		return 0
-	}
+	return exec.Command("powershell", "-NoProfile", "-Command", cmd).Run()
 }
