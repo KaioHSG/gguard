@@ -23,20 +23,10 @@ import (
 var Version = "0.2.1"
 
 var (
-	statusFlag    bool
-	stopFlag      bool
-	quietFlag     bool
-	installFlag   bool
-	uninstallFlag bool
-	startFlag     bool
-	restartFlag   bool
-	userFlag      bool
-	versionFlag   bool
-	upgradeFlag   bool
-	importFlag    string
-	exportFlag    bool
-	scriptsFlag   scriptsList
-	guardsFlag    string
+	quietFlag   bool
+	userFlag    bool
+	scriptsFlag scriptsList
+	guardsFlag  string
 )
 
 type scriptsList []string
@@ -62,69 +52,51 @@ type guardsRoutine struct {
 	DeleteOlderThan string `json:"delete_older_than"`
 }
 
+func registerFlags(fs *flag.FlagSet) {
+	fs.BoolVar(&quietFlag, "quiet", false, "Log to file instead of console")
+	fs.BoolVar(&quietFlag, "q", false, "")
+	fs.BoolVar(&userFlag, "user", false, "Force user mode (override auto-detect)")
+	fs.Var(&scriptsFlag, "scripts", ".ggs file or directory")
+	fs.Var(&scriptsFlag, "s", "")
+	fs.Var(&scriptsFlag, "script", "")
+	fs.StringVar(&guardsFlag, "guards", "", "Path to guards.json (default: next to gguard)")
+	fs.StringVar(&guardsFlag, "g", "", "")
+}
+
 func init() {
-	flag.BoolVar(&statusFlag, "status", false, "Show service status and active guards")
-	flag.BoolVar(&stopFlag, "stop", false, "Stop the service")
-	flag.BoolVar(&quietFlag, "quiet", false, "Log to file instead of console")
-	flag.BoolVar(&quietFlag, "q", false, "")
-	flag.BoolVar(&installFlag, "install", false, "Install as system service (use --user for per-user)")
-	flag.BoolVar(&uninstallFlag, "uninstall", false, "Uninstall the service (use --user for per-user)")
-	flag.BoolVar(&startFlag, "start", false, "Start the service")
-	flag.BoolVar(&restartFlag, "restart", false, "Restart the service")
-	flag.BoolVar(&userFlag, "user", false, "Force user mode (override auto-detect)")
-	flag.BoolVar(&versionFlag, "version", false, "Show version")
-	flag.BoolVar(&versionFlag, "v", false, "")
-	flag.BoolVar(&upgradeFlag, "upgrade", false, "Upgrade existing installation")
-	flag.StringVar(&importFlag, "import", "", "Import a .ggs script or guards.json")
-	flag.BoolVar(&exportFlag, "export", false, "Export all .ggs scripts and guards.json")
-	flag.Var(&scriptsFlag, "scripts", ".ggs file or directory")
-	flag.Var(&scriptsFlag, "s", "")
-	flag.Var(&scriptsFlag, "script", "")
-	flag.StringVar(&guardsFlag, "guards", "", "Path to guards.json (default: next to gguard)")
-	flag.StringVar(&guardsFlag, "g", "", "")
+	registerFlags(flag.CommandLine)
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `gguard - file watcher and backup automator
 
 Usage:
-  gguard -s <file.ggs or directory> [-g <guards.json>] [-q]
-  gguard --install [--user]
-  gguard --uninstall [--user]
-  gguard --upgrade
-  gguard --start
-  gguard --stop
-  gguard --restart
-  gguard --status
-  gguard --import <file.ggs|guards.json>
-  gguard --export
-  gguard --version
-  gguard --help
+  gguard <command> [flags]
 
-Install:
-  --install [--user]  Copy binary, configs and scripts to a standard location,
-                      add to PATH, and register as a system service.
-                        System: %%ProgramFiles%%\GopherGuard (requires admin)
-                        User:   %%LocalAppData%%\Programs\GopherGuard
-  --uninstall [--user] Remove the service and PATH entry.
-                      Auto-detects user/system if --user is omitted.
-  --upgrade           Reinstall keeping the same install type.
-                      Auto-detects whether system or user.
+Commands:
+  install [--user]     Install as system service (--user for per-user)
+  uninstall [--user]   Uninstall the service
+  upgrade              Reinstall keeping the same install type
+  start                Start the service
+  stop                 Stop the service
+  restart              Restart the service
+  status               Show service status and active guards
+  import <file>        Import a .ggs script or guards.json
+  export               Export all .ggs scripts and guards.json
+  version              Show version
+  help                 Show this help
 
-Service Management:
-  --start             Start the service
-  --stop              Stop the service
-  --restart           Restart the service
-  --status            Show service status and active guards
-
-Import/Export:
-  --import <file>     Import a .ggs script or guards.json (merge)
-  --export            Export all .ggs scripts and guards.json
+Examples:
+  gguard install
+  gguard install --user
+  gguard import my-script.ggs
+  gguard -s my-script.ggs -g guards.json -q
 
 Flags:
-  --user              Force user mode (override auto-detect).
-                      Without --user, mode is auto-detected: admin=system, user=user.
+  --user               Force user mode (auto-detect: admin=system, user=user)
+  -q, --quiet          Log to file instead of console
+  -s, --scripts <path> .ggs file or directory
+  -g, --guards <path>  Path to guards.json (default: next to gguard)
 `)
-		flag.PrintDefaults()
 	}
 }
 
@@ -137,65 +109,22 @@ func main() {
 
 	flag.Parse()
 
-	if versionFlag {
-		fmt.Printf("gguard v%s\n", Version)
-		return
-	}
+	remArgs := flag.Args()
+	if len(remArgs) > 0 {
+		subcmd := remArgs[0]
 
-	if installFlag {
-		doInstall(userFlag)
-		return
-	}
-	if uninstallFlag {
-		doUninstall(userFlag)
-		return
-	}
+		sub := flag.NewFlagSet(subcmd, flag.ExitOnError)
+		registerFlags(sub)
+		sub.Usage = flag.Usage
+		_ = sub.Parse(remArgs[1:])
 
-	if upgradeFlag {
-		doUpgrade()
-		return
-	}
-
-	if importFlag != "" {
-		mode := targetMode(userFlag)
-		doImport(importFlag, mode)
-		return
-	}
-	if exportFlag {
-		mode := targetMode(userFlag)
-		doExport(mode)
-		return
-	}
-
-	prg := &program{}
-	mode := targetMode(userFlag)
-	s := newService(prg, mode == "user")
-
-	if startFlag {
-		if err := serviceControl(s, "start"); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-	if stopFlag {
-		if err := serviceControl(s, "stop"); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-	if restartFlag {
-		if err := serviceControl(s, "restart"); err != nil {
-			log.Fatal(err)
-		}
-		return
-	}
-
-	if statusFlag {
-		showStatus(s)
+		dispatch(subcmd, sub.Args())
 		return
 	}
 
 	if isServiceManager() {
+		prg := &program{}
+		s := newService(prg, targetMode(userFlag) == "user")
 		setupServiceLog(exeDir())
 		if err := s.Run(); err != nil {
 			log.Fatal(err)
@@ -203,9 +132,54 @@ func main() {
 		return
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	runGuards(ctx)
+	if isTerminal() || hasCLIFlags() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runGuards(ctx)
+		return
+	}
+
+	showInstallDialog()
+}
+
+func dispatch(subcmd string, subargs []string) {
+	switch subcmd {
+	case "install":
+		doInstall(userFlag)
+	case "uninstall":
+		doUninstall(userFlag)
+	case "upgrade":
+		doUpgrade()
+	case "start", "stop", "restart":
+		prg := &program{}
+		s := newService(prg, targetMode(userFlag) == "user")
+		if err := serviceControl(s, subcmd); err != nil {
+			log.Fatal(err)
+		}
+	case "status":
+		prg := &program{}
+		s := newService(prg, targetMode(userFlag) == "user")
+		showStatus(s)
+	case "import":
+		if len(subargs) == 0 {
+			log.Fatal("import requires a file path")
+		}
+		doImport(subargs[0], targetMode(userFlag))
+	case "export":
+		doExport(targetMode(userFlag))
+	case "version":
+		fmt.Printf("gguard v%s\n", Version)
+	case "help":
+		flag.Usage()
+	default:
+		fmt.Fprintf(os.Stderr, "gguard: unknown command: %s\n", subcmd)
+		flag.Usage()
+		os.Exit(1)
+	}
+}
+
+func hasCLIFlags() bool {
+	return quietFlag || len(scriptsFlag) > 0 || guardsFlag != ""
 }
 
 func runGuards(ctx context.Context) {
@@ -223,14 +197,12 @@ func runGuards(ctx context.Context) {
 	var allScriptDirs []string
 	globalConfigPath := resolveGuardsPath(guardsFlag, exeDir)
 
-	// Global scripts
 	if len(scriptsFlag) > 0 {
 		allScriptDirs = append(allScriptDirs, scriptsFlag...)
 	} else {
 		allScriptDirs = append(allScriptDirs, filepath.Join(exeDir, "gg-scripts"))
 	}
 
-	// Active user scripts (system service mode only)
 	userConfigPath := ""
 	if isServiceMode() {
 		if userDir := activeUserConfigDir(); userDir != "" {
@@ -246,7 +218,6 @@ func runGuards(ctx context.Context) {
 	scriptPaths := resolveScripts(allScriptDirs)
 
 	if len(scriptsFlag) == 0 {
-		// auto-start mode: filter by autostart from global config
 		scriptPaths = filterAutostart(globalConfigPath, scriptPaths)
 	}
 
@@ -260,7 +231,6 @@ func runGuards(ctx context.Context) {
 	var instances []instance
 	var statusEntries []statusEntry
 
-	// Determine user config dir for path matching
 	userCfgDir := ""
 	if userConfigPath != "" {
 		userCfgDir = filepath.Dir(userConfigPath)
@@ -288,7 +258,6 @@ func runGuards(ctx context.Context) {
 				continue
 			}
 
-			// Use user config if script is inside user's config dir
 			cfg := globalConfigPath
 			if userCfgDir != "" && strings.HasPrefix(path, userCfgDir) {
 				cfg = userConfigPath

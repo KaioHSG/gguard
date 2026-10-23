@@ -23,8 +23,8 @@ const (
 )
 
 var (
-	user32                     = syscall.NewLazyDLL("user32.dll")
-	procSendMessageTimeoutW    = user32.NewProc("SendMessageTimeoutW")
+	user32                  = syscall.NewLazyDLL("user32.dll")
+	procSendMessageTimeoutW = user32.NewProc("SendMessageTimeoutW")
 )
 
 func sendMessageTimeout(hWnd uintptr, msg uint32, wParam, lParam uintptr, flags uint32, timeout uint32) uintptr {
@@ -224,9 +224,9 @@ func uninstallStartMenuShortcut(system bool) error {
 }
 
 func installDesktopEntry(_ string, _ bool) error { return nil }
-func uninstallDesktopEntry(_ bool) error          { return nil }
-func installIcon(_ bool) error                     { return nil }
-func uninstallIcon(_ bool) error                   { return nil }
+func uninstallDesktopEntry(_ bool) error         { return nil }
+func installIcon(_ bool) error                   { return nil }
+func uninstallIcon(_ bool) error                 { return nil }
 
 func createShellLink(targetPath, shortcutPath, description string) error {
 	cmd := fmt.Sprintf(
@@ -234,4 +234,51 @@ func createShellLink(targetPath, shortcutPath, description string) error {
 		shortcutPath, targetPath, strings.ReplaceAll(description, "'", "''"),
 	)
 	return exec.Command("powershell", "-NoProfile", "-Command", cmd).Run()
+}
+
+func installAppsRegistry(targetDir string, system bool) error {
+	rootKey := registry.CURRENT_USER
+	keyPath := `Software\Microsoft\Windows\CurrentVersion\Uninstall\GopherGuard`
+	if system {
+		rootKey = registry.LOCAL_MACHINE
+		keyPath = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\GopherGuard`
+	}
+
+	access := uint32(registry.QUERY_VALUE | registry.SET_VALUE)
+	key, _, err := registry.CreateKey(rootKey, keyPath, access)
+	if err != nil {
+		return fmt.Errorf("cannot create uninstall registry key: %w", err)
+	}
+	defer key.Close()
+
+	exePath := filepath.Join(targetDir, exeName())
+	uninstallStr := fmt.Sprintf(`"%s" uninstall`, exePath)
+
+	_ = key.SetStringValue("DisplayName", "GopherGuard")
+	_ = key.SetStringValue("DisplayVersion", Version)
+	_ = key.SetStringValue("Publisher", "KaioHSG")
+	_ = key.SetStringValue("UninstallString", uninstallStr)
+	_ = key.SetStringValue("InstallLocation", targetDir)
+	_ = key.SetStringValue("DisplayIcon", exePath)
+	_ = key.SetStringValue("HelpLink", "https://github.com/KaioHSG/gguard")
+	_ = key.SetStringValue("URLInfoAbout", "https://github.com/KaioHSG/gguard")
+
+	log.Printf("registered %s in Apps & Features", targetDir)
+	return nil
+}
+
+func uninstallAppsRegistry(system bool) error {
+	rootKey := registry.CURRENT_USER
+	keyPath := `Software\Microsoft\Windows\CurrentVersion\Uninstall\GopherGuard`
+	if system {
+		rootKey = registry.LOCAL_MACHINE
+		keyPath = `SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\GopherGuard`
+	}
+
+	if err := registry.DeleteKey(rootKey, keyPath); err != nil && err != registry.ErrNotExist {
+		return fmt.Errorf("cannot remove uninstall registry key: %w", err)
+	}
+
+	log.Println("removed Apps & Features entry")
+	return nil
 }

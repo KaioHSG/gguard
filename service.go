@@ -96,7 +96,7 @@ func serviceControl(s service.Service, action string) error {
 
 	switch action {
 	case "install":
-		log.Println("gguard installed as service. Use 'gguard --start' or your OS service manager to start it.")
+		log.Println("gguard installed as service. Use 'gguard start' or your OS service manager to start it.")
 	case "uninstall":
 		log.Println("gguard uninstalled.")
 	case "stop":
@@ -176,4 +176,3 @@ func setupServiceLog(exeDir string) {
 		log.Printf("gguard: cannot open log file %s: %v", logFile, err)
 	}
 }
-

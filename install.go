@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 func detectInstallType() (isUser bool, installed bool) {
@@ -20,6 +21,16 @@ func detectInstallType() (isUser bool, installed bool) {
 	cfgUser := &serviceConfig{Name: "gguard-user", DisplayName: "GopherGuard (User)"}
 	sUser := buildService(prg, cfgUser)
 	if _, err := sUser.Status(); err == nil {
+		return true, true
+	}
+
+	sysDir := installTargetDir(false)
+	if _, err := os.Stat(filepath.Join(sysDir, exeName())); err == nil {
+		return false, true
+	}
+
+	userDir := installTargetDir(true)
+	if _, err := os.Stat(filepath.Join(userDir, exeName())); err == nil {
 		return true, true
 	}
 
@@ -41,7 +52,7 @@ func doInstall(userService bool) {
 			if isUser {
 				label = "user"
 			}
-			log.Fatalf("a %s installation already exists. Use --install%s to upgrade it.",
+			log.Fatalf("a %s installation already exists. Use 'gguard install%s' to upgrade it.",
 				label, map[bool]string{true: " --user", false: ""}[isUser])
 		}
 		log.Println("upgrading existing installation...")
@@ -60,10 +71,16 @@ func doInstall(userService bool) {
 
 	exeSrc := filepath.Join(srcDir, exeName())
 	exeDst := filepath.Join(targetDir, exeName())
-	if err := copyFile(exeSrc, exeDst); err != nil {
-		log.Fatalf("cannot copy binary to %s: %v", exeDst, err)
+	exeSrcAbs, _ := filepath.Abs(exeSrc)
+	exeDstAbs, _ := filepath.Abs(exeDst)
+	if strings.EqualFold(exeSrcAbs, exeDstAbs) {
+		log.Printf("already installed at %s", targetDir)
+	} else {
+		if err := copyFile(exeSrc, exeDst); err != nil {
+			log.Fatalf("cannot copy binary to %s: %v", exeDst, err)
+		}
+		log.Printf("copied %s -> %s", exeName(), targetDir)
 	}
-	log.Printf("copied %s -> %s", exeName(), targetDir)
 
 	var args []string
 	hasGuards := false
@@ -159,6 +176,14 @@ func doInstall(userService bool) {
 		UserService:      userService,
 	}
 
+	if serviceExists(name) {
+		log.Printf("stopping existing %s service...", name)
+		oldPrg := &program{}
+		oldCfg := &serviceConfig{Name: name, DisplayName: name}
+		oldS := buildService(oldPrg, oldCfg)
+		serviceControl(oldS, "stop")
+	}
+
 	s := buildService(prg, cfg)
 	if err := serviceControl(s, "install"); err != nil {
 		log.Printf("warning: %v", err)
@@ -172,6 +197,10 @@ func doInstall(userService bool) {
 	}
 	if err := installStartMenuShortcut(targetDir, !userService); err != nil {
 		log.Printf("warning: cannot install start menu shortcut: %v", err)
+	}
+
+	if err := installAppsRegistry(targetDir, !userService); err != nil {
+		log.Printf("warning: cannot register in Apps & Features: %v", err)
 	}
 
 	if err := addToPath(targetDir, !userService); err != nil {
@@ -218,6 +247,10 @@ func doUninstall(userService bool) {
 	}
 
 	s := buildService(prg, cfg)
+
+	log.Printf("stopping %s service...", name)
+	serviceControl(s, "stop")
+
 	if err := serviceControl(s, "uninstall"); err != nil {
 		log.Printf("warning: %v", err)
 	}
@@ -232,11 +265,53 @@ func doUninstall(userService bool) {
 		log.Printf("warning: cannot remove start menu shortcut: %v", err)
 	}
 
+	if err := uninstallAppsRegistry(!userService); err != nil {
+		log.Printf("warning: cannot remove Apps & Features entry: %v", err)
+	}
+
 	if err := removeFromPath(targetDir, !userService); err != nil {
 		log.Printf("warning: cannot update PATH: %v", err)
 	}
 
+	removeInstallDir(targetDir)
+
 	fmt.Printf("gguard uninstalled from %s\n", targetDir)
+}
+
+func removeInstallDir(dir string) {
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return
+	}
+
+	exe, _ := os.Executable()
+	exeDir := filepath.Dir(exe)
+
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+
+	for _, e := range entries {
+		path := filepath.Join(dir, e.Name())
+		if e.IsDir() {
+			if err := os.RemoveAll(path); err != nil {
+				log.Printf("warning: could not remove %s: %v", path, err)
+			}
+		} else {
+			if err := os.Remove(path); err != nil {
+				log.Printf("warning: could not remove %s: %v", path, err)
+			}
+		}
+	}
+
+	if strings.EqualFold(filepath.Clean(dir), filepath.Clean(exeDir)) {
+		log.Printf("gguard: cannot remove install dir %s (running from it)", dir)
+		return
+	}
+
+	if err := os.Remove(dir); err != nil {
+		log.Printf("warning: could not remove install directory %s: %v", dir, err)
+	}
 }
 
 func doUpgrade() {

@@ -113,4 +113,6 @@ func uninstallIcon(system bool) error {
 }
 
 func installStartMenuShortcut(targetDir string, system bool) error { return nil }
-func uninstallStartMenuShortcut(system bool) error                { return nil }
+func uninstallStartMenuShortcut(system bool) error                 { return nil }
+func installAppsRegistry(_ string, _ bool) error                   { return nil }
+func uninstallAppsRegistry(_ bool) error                           { return nil }
