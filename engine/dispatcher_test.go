@@ -8,10 +8,14 @@ import (
 	"testing"
 
 	"github.com/KaioHSG/gguard/ggs"
+	"github.com/KaioHSG/gguard/notify"
 )
 
 func TestExecuteMessage(t *testing.T) {
-	disp := NewDispatcher(map[string]string{})
+	notify.SetEnabled(false)
+	defer notify.SetEnabled(true)
+
+	disp := NewDispatcher("test", map[string]string{})
 	err := disp.Execute(ggs.Command{
 		Verb: "message",
 		Args: []string{"hello world"},
@@ -40,7 +44,7 @@ func TestExecuteZip(t *testing.T) {
 
 	zipDest := filepath.Join(tmpDir, "backup.zip")
 
-	disp := NewDispatcher(map[string]string{})
+	disp := NewDispatcher("test", map[string]string{})
 	err = disp.Execute(ggs.Command{Verb: "zip", Args: []string{zipDest, srcDir}})
 	if err != nil {
 		t.Fatalf("zip failed: %v", err)
@@ -81,7 +85,7 @@ func TestExecuteZipVariableResolution(t *testing.T) {
 
 	zipDest := filepath.Join(tmpDir, "backup-{var}.zip")
 
-	disp := NewDispatcher(map[string]string{"var": "test"})
+	disp := NewDispatcher("test", map[string]string{"var": "test"})
 	err = disp.Execute(ggs.Command{Verb: "zip", Args: []string{zipDest, srcDir}})
 	if err != nil {
 		t.Fatalf("zip failed: %v", err)
@@ -94,7 +98,7 @@ func TestExecuteZipVariableResolution(t *testing.T) {
 }
 
 func TestDispatcherUnknownCommand(t *testing.T) {
-	disp := NewDispatcher(map[string]string{})
+	disp := NewDispatcher("test", map[string]string{})
 	err := disp.Execute(ggs.Command{Verb: "nonexistent"})
 	if err == nil {
 		t.Fatal("expected error for unknown command")

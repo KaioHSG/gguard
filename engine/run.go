@@ -29,7 +29,7 @@ func Describe(guard *ggs.Guard, configVars map[string]string) []ResolvedCommand 
 	vars := BuildVars(guard, configVars)
 	vars["timestamp"] = time.Now().Format("2006-01-02_15-04-05")
 
-	disp := NewDispatcher(vars)
+	disp := NewDispatcher(guard.Name, vars)
 	out := make([]ResolvedCommand, 0, len(guard.Commands))
 	for _, cmd := range guard.Commands {
 		args := make([]string, len(cmd.Args))
@@ -49,7 +49,7 @@ func RunOnce(guard *ggs.Guard, configVars map[string]string, onStep func(Resolve
 	vars["timestamp"] = time.Now().Format("2006-01-02_15-04-05")
 	vars["file"] = ""
 
-	disp := NewDispatcher(vars)
+	disp := NewDispatcher(guard.Name, vars)
 	var runErr error
 	for _, cmd := range guard.Commands {
 		if onStep != nil {

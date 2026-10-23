@@ -71,6 +71,13 @@ func Parse(input string) (*Guard, error) {
 				Args: []string{msg},
 			})
 
+		case "notify":
+			msg := strings.Join(args, " ")
+			guard.Commands = append(guard.Commands, Command{
+				Verb: "notify",
+				Args: []string{msg},
+			})
+
 		default:
 			return nil, fmt.Errorf("line %d: unknown command %q", i+1, verb)
 		}

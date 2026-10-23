@@ -13,14 +13,16 @@ import (
 	"time"
 
 	"github.com/KaioHSG/gguard/ggs"
+	"github.com/KaioHSG/gguard/notify"
 )
 
 type Dispatcher struct {
+	name string
 	vars map[string]string
 }
 
-func NewDispatcher(vars map[string]string) *Dispatcher {
-	return &Dispatcher{vars: vars}
+func NewDispatcher(name string, vars map[string]string) *Dispatcher {
+	return &Dispatcher{name: name, vars: vars}
 }
 
 func (d *Dispatcher) Execute(cmd ggs.Command) error {
@@ -36,6 +38,8 @@ func (d *Dispatcher) Execute(cmd ggs.Command) error {
 		return d.execSync(args)
 	case "message":
 		return d.execMessage(args)
+	case "notify":
+		return d.execNotify(args)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Verb)
 	}
@@ -124,7 +128,28 @@ func (d *Dispatcher) execMessage(args []string) error {
 		return nil
 	}
 	fmt.Println(args[0])
+	// A message is also surfaced as a desktop notification so the user gets
+	// feedback even when the tray is not visible.
+	d.notify(args[0])
 	return nil
+}
+
+func (d *Dispatcher) execNotify(args []string) error {
+	if len(args) == 0 {
+		return nil
+	}
+	d.notify(args[0])
+	return nil
+}
+
+func (d *Dispatcher) notify(message string) {
+	title := d.name
+	if title == "" {
+		title = "GopherGuard"
+	}
+	if err := notify.Notify(title, message); err != nil {
+		log.Printf("[notify] %v", err)
+	}
 }
 
 func (d *Dispatcher) execSync(args []string) error {

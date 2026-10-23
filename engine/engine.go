@@ -107,7 +107,7 @@ func (e *Engine) execute(file string) {
 	vars["file"] = filepath.Base(file)
 
 	var runErr error
-	disp := NewDispatcher(vars)
+	disp := NewDispatcher(e.guard.Name, vars)
 	for _, cmd := range e.guard.Commands {
 		if err := disp.Execute(cmd); err != nil {
 			log.Printf("[%s] error executing %s: %v", e.guard.Name, cmd.Verb, err)
