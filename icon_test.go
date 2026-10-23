@@ -42,7 +42,12 @@ func checkICO(t *testing.T, ico []byte, wantSize int) {
 
 func TestEncodeICOHeader(t *testing.T) {
 	checkICO(t, statusDotICO(StateOK), 16)
-	checkICO(t, trayIconICO(StateOK), 32)
+
+	img := iconImage()
+	if img == nil {
+		t.Fatal("cannot decode embedded tray icon")
+	}
+	checkICO(t, trayIconICO(StateOK), img.Bounds().Dx())
 }
 
 func TestColorForState(t *testing.T) {
@@ -97,9 +102,9 @@ func TestRenderTrayPreview(t *testing.T) {
 	}
 
 	for _, s := range []GuardState{StateOK, StateIdle, StateError, StateRunning} {
-		img := gopherImage(trayIconSize)
+		img := iconImage()
 		if img == nil {
-			t.Fatal("cannot decode gopher icon")
+			t.Fatal("cannot decode tray icon")
 		}
 		drawBadge(img, colorForState(s))
 

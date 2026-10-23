@@ -11,10 +11,10 @@ import (
 	"math"
 )
 
-//go:embed winres/icons/gopher32.png
-var gopherIconPNG []byte
+//go:embed winres/icons/shield24.png
+var trayIconPNG []byte
 
-const trayIconSize = 32
+const fallbackIconSize = 32
 
 // statusColors maps each guard state to its indicator color.
 var statusColors = map[GuardState]color.RGBA{
@@ -41,42 +41,51 @@ func dotICO(state GuardState, size int) []byte {
 	return encodeICO(dotImage(colorForState(state), size))
 }
 
-// trayIconICO renders the app icon with a small state badge in the corner, so
-// the tray keeps its identity while still showing the overall state.
+// trayIconICO renders the embedded app icon with a state badge in the
+// bottom-right corner, so the tray keeps its identity while still showing the
+// overall state.
 func trayIconICO(state GuardState) []byte {
-	img := gopherImage(trayIconSize)
+	img := iconImage()
 	if img == nil {
-		return dotICO(state, trayIconSize)
+		return dotICO(state, fallbackIconSize)
 	}
 	drawBadge(img, colorForState(state))
 	return encodeICO(img)
 }
 
-func gopherImage(size int) *image.RGBA {
-	src, err := png.Decode(bytes.NewReader(gopherIconPNG))
+// iconImage decodes the embedded tray icon at its native size.
+func iconImage() *image.RGBA {
+	src, err := png.Decode(bytes.NewReader(trayIconPNG))
 	if err != nil {
 		return nil
 	}
-	img := image.NewRGBA(image.Rect(0, 0, size, size))
-	draw.Draw(img, img.Bounds(), src, src.Bounds().Min, draw.Src)
+	b := src.Bounds()
+	img := image.NewRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
+	draw.Draw(img, img.Bounds(), src, b.Min, draw.Src)
 	return img
 }
 
-// badge geometry, in pixels of the 32x32 tray icon.
+// Badge geometry, as a fraction of the icon size so it scales with whatever
+// icon is embedded. Bump badgeRadiusRatio to make the dot bigger.
 const (
-	badgeRadius  = 5.5
-	badgeRing    = 1.5
-	badgeCenterX = 26.0
-	badgeCenterY = 26.0
+	badgeRadiusRatio = 0.26 // dot radius
+	badgeRingRatio   = 0.07 // dark outline width around the dot
+	badgeMarginRatio = 0.02 // gap between the dot and the icon edge
 )
 
 var badgeOutline = color.RGBA{R: 0x0f, G: 0x17, B: 0x2a, A: 0xff}
 
 // drawBadge composites an anti-aliased status dot with a dark outline onto the
-// top-right corner of the icon.
+// bottom-right corner of the icon.
 func drawBadge(img *image.RGBA, c color.RGBA) {
 	const ss = 4
 	b := img.Bounds()
+
+	size := float64(b.Dx())
+	radius := size * badgeRadiusRatio
+	ring := size * badgeRingRatio
+	margin := size * badgeMarginRatio
+	center := size - radius - ring - margin
 
 	for y := b.Min.Y; y < b.Max.Y; y++ {
 		for x := b.Min.X; x < b.Max.X; x++ {
@@ -85,13 +94,11 @@ func drawBadge(img *image.RGBA, c color.RGBA) {
 				for sx := 0; sx < ss; sx++ {
 					px := float64(x) + (float64(sx)+0.5)/ss
 					py := float64(y) + (float64(sy)+0.5)/ss
-					dx := px - badgeCenterX
-					dy := py - badgeCenterY
-					d := math.Hypot(dx, dy)
+					d := math.Hypot(px-center, py-center)
 					switch {
-					case d <= badgeRadius:
+					case d <= radius:
 						dotCov++
-					case d <= badgeRadius+badgeRing:
+					case d <= radius+ring:
 						ringCov++
 					}
 				}
