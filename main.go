@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -25,6 +27,7 @@ var Version = "0.2.1"
 var (
 	quietFlag   bool
 	userFlag    bool
+	followFlag  bool
 	scriptsFlag scriptsList
 	guardsFlag  string
 )
@@ -139,6 +142,8 @@ func registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&quietFlag, "quiet", false, "Log to file instead of console")
 	fs.BoolVar(&quietFlag, "q", false, "")
 	fs.BoolVar(&userFlag, "user", false, "Force user mode (override auto-detect)")
+	fs.BoolVar(&followFlag, "follow", false, "Follow log output (logs command)")
+	fs.BoolVar(&followFlag, "f", false, "")
 	fs.Var(&scriptsFlag, "scripts", ".ggs file or directory")
 	fs.Var(&scriptsFlag, "s", "")
 	fs.Var(&scriptsFlag, "script", "")
@@ -164,6 +169,7 @@ Commands:
   restart              Restart the service
   status               Show service status and active guards
   tray                 Run in the foreground with a system tray icon
+  logs [-f]            Show the log file (--follow to keep it open)
   list                 List installed guards
   check <file>         Validate a .ggs script and show what it would do
   run <file>           Run a .ggs script once, in the foreground
@@ -251,6 +257,8 @@ func dispatch(subcmd string, subargs []string) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		runForeground(ctx, cancel)
+	case "logs":
+		doLogs(followFlag)
 	case "import":
 		if len(subargs) == 0 {
 			log.Fatal("import requires a file path")
@@ -819,4 +827,35 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// doLogs prints the log file and, when follow is set, keeps polling for new
+// lines until interrupted.
+func doLogs(follow bool) {
+	path := filepath.Join(exeDir(), "gguard.log")
+
+	f, err := os.Open(path)
+	if err != nil {
+		fmt.Printf("no log file at %s\n", path)
+		return
+	}
+	defer f.Close()
+
+	reader := bufio.NewReader(f)
+	for {
+		line, err := reader.ReadString('\n')
+		if line != "" {
+			fmt.Print(line)
+		}
+		if err == nil {
+			continue
+		}
+		if err != io.EOF {
+			return
+		}
+		if !follow {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
 }

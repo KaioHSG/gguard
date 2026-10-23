@@ -204,6 +204,7 @@ Use `-q` or `--quiet` to force log-to-file in foreground mode.
 | `gguard check <file>` | Validate a `.ggs` script and print the resolved plan (dry run) |
 | `gguard run <file>` | Run a `.ggs` script once, in the foreground |
 | `gguard tray` | Run in the foreground with a system tray icon |
+| `gguard logs [-f]` | Show the log file (`--follow` to keep it open) |
 
 ### 14. Tray & Notifications
 
