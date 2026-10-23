@@ -24,8 +24,19 @@ func isServiceManager() bool {
 	return isService
 }
 
+// isTerminal reports whether gguard was launched from an existing console (a
+// shell) rather than a double-click that owns its own console window. It uses
+// GetConsoleProcessList: a shared console means a parent shell is attached.
 func isTerminal() bool {
-	return false
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	getConsoleProcessList := kernel32.NewProc("GetConsoleProcessList")
+
+	var pids [64]uint32
+	n, _, _ := getConsoleProcessList.Call(
+		uintptr(unsafe.Pointer(&pids[0])),
+		uintptr(len(pids)),
+	)
+	return n > 1
 }
 
 func startElevated(args []string) bool {

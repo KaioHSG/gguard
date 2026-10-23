@@ -159,6 +159,7 @@ func init() {
 
 Usage:
   gguard <command> [flags]
+  gguard                       Show this help
 
 Commands:
   install [--user]     Install as system service (--user for per-user)
@@ -225,10 +226,15 @@ func main() {
 		return
 	}
 
-	if isTerminal() || hasCLIFlags() {
+	if hasCLIFlags() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		runForeground(ctx, cancel)
+		return
+	}
+
+	if isTerminal() {
+		flag.Usage()
 		return
 	}
 

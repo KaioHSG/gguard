@@ -198,6 +198,8 @@ Use `-q` or `--quiet` to force log-to-file in foreground mode.
 
 ### 13. Command Line
 
+Running `gguard` with no command prints the help. The installer dialog only appears when the executable is double-clicked (launched without an attached shell).
+
 | Command | Description |
 |---------|-------------|
 | `gguard list` | List installed guards with autostart flag and watch path |

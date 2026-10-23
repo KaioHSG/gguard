@@ -16,8 +16,14 @@ func isServiceManager() bool {
 	return false
 }
 
+// isTerminal reports whether stdin is attached to a terminal (char device), so
+// a bare invocation from a shell prints usage instead of the installer.
 func isTerminal() bool {
-	return false
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return fi.Mode()&os.ModeCharDevice != 0
 }
 
 func startElevated(args []string) bool {
