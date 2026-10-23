@@ -84,6 +84,33 @@ func Parse(input string) (*Guard, error) {
 				Args: []string{msg},
 			})
 
+		case "run":
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: run requires a command", i+1)
+			}
+			guard.Commands = append(guard.Commands, Command{
+				Verb: "run",
+				Args: args,
+			})
+
+		case "delete":
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: delete requires a path", i+1)
+			}
+			guard.Commands = append(guard.Commands, Command{
+				Verb: "delete",
+				Args: args,
+			})
+
+		case "webhook":
+			if len(args) == 0 {
+				return nil, fmt.Errorf("line %d: webhook requires a URL", i+1)
+			}
+			guard.Commands = append(guard.Commands, Command{
+				Verb: "webhook",
+				Args: args,
+			})
+
 		default:
 			return nil, fmt.Errorf("line %d: unknown command %q", i+1, verb)
 		}

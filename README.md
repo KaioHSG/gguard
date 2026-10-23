@@ -173,6 +173,9 @@ Import merge behavior for `guards.json`:
 | `sync --bidir --delete` | Bidirectional sync with orphan removal |
 | `message` | Post-execution log line **and** desktop notification |
 | `notify` | Desktop notification only (no log line) |
+| `run <command>` | Runs a shell command (requires `trusted: true`) |
+| `delete <path>...` | Removes files/directories (requires `trusted: true`) |
+| `webhook <url> [body]` | POSTs `body` to `url` (15s timeout) |
 
 ### 11. guards.json Settings
 

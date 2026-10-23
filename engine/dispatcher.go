@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,6 +41,12 @@ func (d *Dispatcher) Execute(cmd ggs.Command) error {
 		return d.execMessage(args)
 	case "notify":
 		return d.execNotify(args)
+	case "run":
+		return d.execRun(args)
+	case "delete":
+		return d.execDelete(args)
+	case "webhook":
+		return d.execWebhook(args)
 	default:
 		return fmt.Errorf("unknown command: %s", cmd.Verb)
 	}
@@ -150,6 +157,79 @@ func (d *Dispatcher) notify(message string) {
 	if err := notify.Notify(title, message); err != nil {
 		log.Printf("[notify] %v", err)
 	}
+}
+
+// execRun runs an arbitrary shell command. It is gated behind
+// trusted:true because it can do anything the user can.
+func (d *Dispatcher) execRun(args []string) error {
+	if d.vars["trusted"] != "true" {
+		return fmt.Errorf("run: requires trusted:true in guards.json")
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("run requires a command")
+	}
+
+	line := strings.Join(args, " ")
+	cmd := shellCommand(line)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	log.Printf("[run] %s", line)
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run %q: %w", line, err)
+	}
+	return nil
+}
+
+// execDelete removes files or directories. Gated behind trusted:true.
+func (d *Dispatcher) execDelete(args []string) error {
+	if d.vars["trusted"] != "true" {
+		return fmt.Errorf("delete: requires trusted:true in guards.json")
+	}
+	if len(args) == 0 {
+		return fmt.Errorf("delete requires a path")
+	}
+
+	for _, p := range args {
+		if err := os.RemoveAll(p); err != nil {
+			return fmt.Errorf("delete %s: %w", p, err)
+		}
+		log.Printf("[delete] removed %s", p)
+	}
+	return nil
+}
+
+// execWebhook POSTs a body to a URL, useful to ping a server after a backup.
+func (d *Dispatcher) execWebhook(args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("webhook requires a URL")
+	}
+
+	url := args[0]
+	body := ""
+	if len(args) > 1 {
+		body = strings.Join(args[1:], " ")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, url, strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("webhook: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("webhook %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("webhook %s: server returned %s", url, resp.Status)
+	}
+	log.Printf("[webhook] %s -> %s", url, resp.Status)
+	return nil
 }
 
 func (d *Dispatcher) execSync(args []string) error {

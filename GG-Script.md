@@ -35,6 +35,9 @@ message "Backup saved at \"{dest}\""
 | `sync <destination> <source> --bidir --delete` | Bidirectional sync with orphan removal |
 | `message "..."` | Post-execution log line **and** desktop notification |
 | `notify "..."` | Desktop notification only |
+| `run <command>` | Runs a shell command (requires `trusted: true`) |
+| `delete <path>...` | Removes files/directories (requires `trusted: true`) |
+| `webhook <url> [body]` | POSTs `body` to `url` |
 
 ### Available context variables:
 
