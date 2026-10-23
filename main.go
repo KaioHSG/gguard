@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -28,6 +29,8 @@ var (
 	quietFlag   bool
 	userFlag    bool
 	followFlag  bool
+	trayOnFlag  bool
+	trayOffFlag bool
 	scriptsFlag scriptsList
 	guardsFlag  string
 )
@@ -123,9 +126,126 @@ func runForeground(ctx context.Context, cancel context.CancelFunc) {
 		logPath:   filepath.Join(exeDir(), "gguard.log"),
 		configDir: exeDir(),
 		onQuit:    cancel,
+		status:    trayStatus(sess),
 	})
 
 	<-done
+}
+
+// trayStatus reports the overall state shown by the tray: the aggregate guard
+// state when guards are loaded, otherwise the current service state.
+func trayStatus(sess *guardSession) func() (GuardState, string) {
+	return func() (GuardState, string) {
+		if sess.count() > 0 {
+			st := sess.tracker.Aggregate()
+			return st, st.String()
+		}
+
+		running, known := serviceRunningFor()
+		switch {
+		case known && running:
+			return StateOK, "service running"
+		case known && !running:
+			return StateIdle, "service stopped"
+		default:
+			return StateIdle, "no guards"
+		}
+	}
+}
+
+// serviceRunningFor reports whether any installed gguard service exists and is
+// running, using minimal access so it works without administrator rights.
+func serviceRunningFor() (running bool, known bool) {
+	if r, ok := serviceRunning("gguard"); ok {
+		return r, true
+	}
+	if r, ok := serviceRunning("gguard-user"); ok {
+		return r, true
+	}
+	return false, false
+}
+
+// doTrayCommand handles the tray subcommand: --on starts a detached background
+// tray, --off stops it, and no flag runs the tray in the foreground.
+func doTrayCommand(on, off bool) {
+	if !trayAvailable() {
+		log.Fatal("the system tray is not supported on this platform")
+	}
+
+	switch {
+	case off:
+		stopBackgroundTray()
+	case on:
+		startBackgroundTray()
+	default:
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runForeground(ctx, cancel)
+		removeOwnTrayPid()
+	}
+}
+
+func trayPidPath() string {
+	return filepath.Join(exeDir(), "gguard.tray.pid")
+}
+
+func readTrayPid(path string) (int, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, false
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	if err != nil || pid <= 0 {
+		return 0, false
+	}
+	return pid, true
+}
+
+func startBackgroundTray() {
+	pidPath := trayPidPath()
+	if pid, ok := readTrayPid(pidPath); ok && processAlive(pid) {
+		fmt.Printf("tray is already on (pid %d)\n", pid)
+		return
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		log.Fatalf("cannot locate gguard: %v", err)
+	}
+
+	pid, err := spawnDetached(exe, []string{"tray", "-q"})
+	if err != nil {
+		log.Fatalf("cannot start tray: %v", err)
+	}
+	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(pid)), 0644); err != nil {
+		log.Printf("warning: cannot write pid file: %v", err)
+	}
+	fmt.Printf("tray on (pid %d)\n", pid)
+}
+
+func stopBackgroundTray() {
+	pidPath := trayPidPath()
+	pid, ok := readTrayPid(pidPath)
+	if !ok || !processAlive(pid) {
+		os.Remove(pidPath)
+		fmt.Println("tray is already off")
+		return
+	}
+
+	if err := killProcess(pid); err != nil {
+		log.Printf("warning: cannot stop tray: %v", err)
+	}
+	os.Remove(pidPath)
+	fmt.Printf("tray off (pid %d)\n", pid)
+}
+
+// removeOwnTrayPid cleans up the pid file when this process is the tray it
+// points to.
+func removeOwnTrayPid() {
+	pidPath := trayPidPath()
+	if pid, ok := readTrayPid(pidPath); ok && pid == os.Getpid() {
+		os.Remove(pidPath)
+	}
 }
 
 type guardsRoutine struct {
@@ -144,6 +264,8 @@ func registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&userFlag, "user", false, "Force user mode (override auto-detect)")
 	fs.BoolVar(&followFlag, "follow", false, "Follow log output (logs command)")
 	fs.BoolVar(&followFlag, "f", false, "")
+	fs.BoolVar(&trayOnFlag, "on", false, "Start the tray in the background (tray command)")
+	fs.BoolVar(&trayOffFlag, "off", false, "Stop the background tray (tray command)")
 	fs.Var(&scriptsFlag, "scripts", ".ggs file or directory")
 	fs.Var(&scriptsFlag, "s", "")
 	fs.Var(&scriptsFlag, "script", "")
@@ -169,7 +291,7 @@ Commands:
   stop                 Stop the service
   restart              Restart the service
   status               Show service status and active guards
-  tray                 Run in the foreground with a system tray icon
+  tray [--on|--off]   Tray icon (no flag: foreground; --on/--off: background)
   logs [-f]            Show the log file (--follow to keep it open)
   list                 List installed guards
   check <file>         Validate a .ggs script and show what it would do
@@ -277,9 +399,7 @@ func dispatch(subcmd string, subargs []string) {
 			elevationHint(userService)
 		}
 	case "tray":
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		runForeground(ctx, cancel)
+		doTrayCommand(trayOnFlag, trayOffFlag)
 	case "logs":
 		doLogs(followFlag)
 	case "import":
@@ -343,12 +463,14 @@ func runGuards(ctx context.Context, sess *guardSession) {
 	}
 
 	userConfigPath := ""
+	userCfgDir := ""
 	if isServiceMode() {
 		if userDir := activeUserConfigDir(); userDir != "" {
 			userScriptsDir := filepath.Join(userDir, "gg-scripts")
 			if _, err := os.Stat(userScriptsDir); err == nil {
 				allScriptDirs = append(allScriptDirs, userScriptsDir)
 				userConfigPath = filepath.Join(userDir, "guards.json")
+				userCfgDir = userDir
 				log.Printf("gguard: loading user scripts from %s", userScriptsDir)
 			}
 		}
@@ -356,16 +478,20 @@ func runGuards(ctx context.Context, sess *guardSession) {
 
 	scriptPaths := resolveScripts(allScriptDirs)
 
+	// Each script uses the config from its own directory: global scripts use the
+	// global guards.json, user scripts use the active user's guards.json.
+	configFor := func(path string) string {
+		if userCfgDir != "" && strings.HasPrefix(path, userCfgDir) {
+			return userConfigPath
+		}
+		return globalConfigPath
+	}
+
 	if len(scriptsFlag) == 0 {
-		scriptPaths = filterAutostart(globalConfigPath, scriptPaths)
+		scriptPaths = filterAutostart(scriptPaths, configFor)
 	}
 
 	home := userHomeDir()
-
-	userCfgDir := ""
-	if userConfigPath != "" {
-		userCfgDir = filepath.Dir(userConfigPath)
-	}
 
 	if len(scriptPaths) > 0 {
 		ctx2, cancel2 := context.WithCancel(ctx)
@@ -389,10 +515,7 @@ func runGuards(ctx context.Context, sess *guardSession) {
 				continue
 			}
 
-			cfg := globalConfigPath
-			if userCfgDir != "" && strings.HasPrefix(path, userCfgDir) {
-				cfg = userConfigPath
-			}
+			cfg := configFor(path)
 
 			key := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 			vars := loadConfig(cfg, key)
@@ -424,9 +547,12 @@ func runGuards(ctx context.Context, sess *guardSession) {
 	}
 
 	if sess.count() == 0 {
-		if isServiceMode() {
+		switch {
+		case isServiceMode():
 			log.Println("gguard: no scripts found. Add .ggs files and restart the service.")
-		} else {
+		case trayAvailable():
+			log.Println("gguard: no scripts found. Showing service status only.")
+		default:
 			log.Fatal("no scripts found. Create a gg-scripts/ directory or use --scripts.")
 		}
 	}
@@ -463,14 +589,10 @@ func checkStopFile(path string) <-chan struct{} {
 	return done
 }
 
-func filterAutostart(configPath string, allPaths []string) []string {
-	config := loadGuardsConfig(configPath)
-	if config == nil {
-		return nil
-	}
-
+func filterAutostart(allPaths []string, configFor func(string) string) []string {
 	var filtered []string
 	for _, path := range allPaths {
+		config := loadGuardsConfig(configFor(path))
 		key := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 		if r, ok := config[key]; ok && r.Autostart {
 			filtered = append(filtered, path)

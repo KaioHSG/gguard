@@ -4,6 +4,7 @@ package main
 
 import (
 	"os/exec"
+	"time"
 
 	"fyne.io/systray"
 )
@@ -15,6 +16,9 @@ type trayOptions struct {
 	logPath   string
 	configDir string
 	onQuit    func()
+	// status returns the overall state and a short label to display. When no
+	// guards are loaded it reports the service state instead.
+	status func() (GuardState, string)
 }
 
 // trayAvailable reports whether a system tray can be shown on this platform.
@@ -34,13 +38,28 @@ func runTray(opts trayOptions) {
 		quitItem := systray.AddMenuItem("Quit", "Stop GopherGuard")
 
 		refresh := func() {
-			st := opts.tracker.Aggregate()
-			systray.SetIcon(statusDotICO(st))
-			systray.SetTooltip("GopherGuard — " + st.String())
-			status.SetTitle("Status: " + st.String())
+			state := StateIdle
+			label := "idle"
+			if opts.status != nil {
+				state, label = opts.status()
+			}
+			systray.SetIcon(statusDotICO(state))
+			systray.SetTooltip("GopherGuard — " + label)
+			status.SetTitle("Status: " + label)
 		}
+
 		opts.tracker.AddListener(refresh)
 		refresh()
+
+		// Poll so the icon also tracks the service state when there are no
+		// local guards.
+		go func() {
+			ticker := time.NewTicker(3 * time.Second)
+			defer ticker.Stop()
+			for range ticker.C {
+				refresh()
+			}
+		}()
 
 		go func() {
 			for {

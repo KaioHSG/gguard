@@ -10,6 +10,7 @@ type trayOptions struct {
 	logPath   string
 	configDir string
 	onQuit    func()
+	status    func() (GuardState, string)
 }
 
 // trayAvailable reports whether a system tray can be shown on this platform.

@@ -208,16 +208,17 @@ Running `gguard` with no command prints the help. The installer dialog only appe
 | `gguard check <file>` | Validate a `.ggs` script and print the resolved plan (dry run) |
 | `gguard run <file>` | Run a `.ggs` script once, in the foreground |
 | `gguard tray` | Run in the foreground with a system tray icon |
+| `gguard tray --on` / `--off` | Start / stop the tray in the background |
 | `gguard logs [-f]` | Show the log file (`--follow` to keep it open) |
 
 ### 14. Tray & Notifications
 
-Run `gguard tray` (or any foreground run on Windows) to show a tray icon whose color reflects the overall state:
+The tray shows a colored dot reflecting the overall state. It runs in the foreground with `gguard tray`, or detached in the background with `gguard tray --on` (`gguard tray --off` stops it). It works even with no scripts installed — in that case it simply shows the **service state**.
 
 | Color | Meaning |
 |-------|---------|
-| 🟢 Green | Last run finished successfully |
-| 🟡 Yellow | Idle — nothing has run yet, or stopped |
+| 🟢 Green | Last run finished successfully, or the service is running (no scripts) |
+| 🟡 Yellow | Idle — nothing has run yet, the service is stopped, or no guards |
 | 🔴 Red | The last run failed |
 | 🔵 Blue | A guard is running right now |
 
