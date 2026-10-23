@@ -6,6 +6,9 @@ import (
 	"time"
 )
 
+// defaultVersion is assumed when a script omits the version header.
+const defaultVersion = "1.0"
+
 func Parse(input string) (*Guard, error) {
 	guard := &Guard{}
 	lines := strings.Split(input, "\n")
@@ -27,6 +30,9 @@ func Parse(input string) (*Guard, error) {
 		case "version":
 			if len(args) == 0 {
 				return nil, fmt.Errorf("line %d: version requires a value", i+1)
+			}
+			if err := checkVersion(args[0]); err != nil {
+				return nil, fmt.Errorf("line %d: %w", i+1, err)
 			}
 			guard.Version = args[0]
 
@@ -83,7 +89,26 @@ func Parse(input string) (*Guard, error) {
 		}
 	}
 
+	if guard.Name == "" {
+		return nil, fmt.Errorf("missing required header: guard \"<name>\"")
+	}
+	if guard.Version == "" {
+		guard.Version = defaultVersion
+	}
+
 	return guard, nil
+}
+
+// checkVersion accepts any 1.x script version and rejects anything else.
+func checkVersion(v string) error {
+	major := v
+	if i := strings.IndexByte(v, '.'); i >= 0 {
+		major = v[:i]
+	}
+	if major != "1" {
+		return fmt.Errorf("unsupported script version %q (this build supports 1.x)", v)
+	}
+	return nil
 }
 
 func splitLine(line string) (verb string, args []string) {

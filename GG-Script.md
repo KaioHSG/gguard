@@ -24,8 +24,8 @@ message "Backup saved at \"{dest}\""
 | Line | What it is |
 |------|------------|
 | `guard "My Backup"` | Required header. Routine name |
-| `version 1.0` | Required header. Routine version |
-| `os windows` | Required header. Target system |
+| `version 1.0` | Optional header. Routine version (defaults to `1.0`; only `1.x` is accepted) |
+| `os windows` | Optional header. Target system(s): `windows`, `linux`, `darwin`. Omit to run everywhere; accepts a comma list (`os windows,linux`) |
 | `watch "..."` | Registers a recursive watcher on this directory |
 | `debounce 5s` | Silence time after the last event before triggering |
 | `zip <destination.zip> <source>` | ZIP compression command |
@@ -33,7 +33,8 @@ message "Backup saved at \"{dest}\""
 | `sync <destination> <source> --delete` | Sync with orphan removal (requires `trusted: true`) |
 | `sync <destination> <source> --bidir` | Bidirectional sync (copies both ways) |
 | `sync <destination> <source> --bidir --delete` | Bidirectional sync with orphan removal |
-| `message "..."` | Post-execution log/notification |
+| `message "..."` | Post-execution log line **and** desktop notification |
+| `notify "..."` | Desktop notification only |
 
 ### Available context variables:
 
@@ -59,6 +60,8 @@ Scripts are loaded from different directories depending on the installation mode
 When the **system service** runs, it also loads scripts from the **active user's** config directory (the person currently logged in at the console). This allows each user to have personal backup scripts without needing admin privileges.
 
 To import a script: `gguard import backup.ggs` (copies to the correct directory automatically).
+
+To validate a script before installing it: `gguard check backup.ggs` (dry run). To run it once right now: `gguard run backup.ggs`.
 
 ### guards.json Settings
 

@@ -162,8 +162,8 @@ Import merge behavior for `guards.json`:
 | Command | Description |
 |---------|-------------|
 | `guard` | Routine name (required) |
-| `version` | Routine version (required) |
-| `os` | Target system: `windows`, `linux`, `darwin` |
+| `version` | Routine version (optional, defaults to `1.0`; only `1.x` is accepted) |
+| `os` | Target system(s): `windows`, `linux`, `darwin`. Optional — omit to run everywhere; accepts a comma list (`os windows,linux`) |
 | `watch` | Directory to monitor (absolute path or with `{home}`) |
 | `debounce` | Silence time after the last event (e.g., `5s`, `10s`, `1m`) |
 | `zip` | Compresses `{source}` into `{destination}.zip` |
@@ -171,7 +171,8 @@ Import merge behavior for `guards.json`:
 | `sync --delete` | Sync + removes orphans (requires `trusted`) |
 | `sync --bidir` | Bidirectional sync (copies both ways) |
 | `sync --bidir --delete` | Bidirectional sync with orphan removal |
-| `message` | Post-execution log / notification |
+| `message` | Post-execution log line **and** desktop notification |
+| `notify` | Desktop notification only (no log line) |
 
 ### 11. guards.json Settings
 
@@ -191,6 +192,30 @@ When running as a service, logs are written to `gguard.log` in the install direc
 - **User**: `%APPDATA%\Programs\GopherGuard\gguard.log`
 
 Use `-q` or `--quiet` to force log-to-file in foreground mode.
+
+### 13. Command Line
+
+| Command | Description |
+|---------|-------------|
+| `gguard list` | List installed guards with autostart flag and watch path |
+| `gguard check <file>` | Validate a `.ggs` script and print the resolved plan (dry run) |
+| `gguard run <file>` | Run a `.ggs` script once, in the foreground |
+| `gguard tray` | Run in the foreground with a system tray icon |
+
+### 14. Tray & Notifications
+
+Run `gguard tray` (or any foreground run on Windows) to show a tray icon whose color reflects the overall state:
+
+| Color | Meaning |
+|-------|---------|
+| 🟢 Green | Last run finished successfully |
+| 🟡 Yellow | Idle — nothing has run yet, or stopped |
+| 🔴 Red | The last run failed |
+| 🔵 Blue | A guard is running right now |
+
+Clicking the icon opens a small menu: **status**, **Run now**, **Open log**, **Open folder**, **Quit**.
+
+When a guard uses the `message` or `notify` verb, GopherGuard also raises a native desktop notification (Windows toast, `notify-send` on Linux, `osascript` on macOS).
 
 ---
 

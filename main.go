@@ -353,7 +353,7 @@ func runGuards(ctx context.Context, sess *guardSession) {
 				continue
 			}
 
-			if guard.OS != "" && guard.OS != runtimeOS() {
+			if !guard.MatchesOS(runtimeOS()) {
 				log.Printf("skipping %q: targets OS %q but current OS is %q", guard.Name, guard.OS, runtimeOS())
 				continue
 			}
@@ -782,7 +782,7 @@ func doCheck(file, mode string) {
 	fmt.Printf("os:       %s\n", orDash(guard.OS))
 	fmt.Printf("debounce: %s\n", guard.Debounce)
 
-	if guard.OS != "" && guard.OS != runtimeOS() {
+	if !guard.MatchesOS(runtimeOS()) {
 		fmt.Printf("\nwarning: script targets %q but this machine is %q\n", guard.OS, runtimeOS())
 	}
 

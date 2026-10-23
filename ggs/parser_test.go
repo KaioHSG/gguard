@@ -110,3 +110,55 @@ debounce xyz
 		t.Fatal("expected error for invalid debounce duration")
 	}
 }
+
+func TestParseUnsupportedVersion(t *testing.T) {
+	_, err := Parse(`guard "test"
+version 2.0
+watch /tmp
+`)
+	if err == nil {
+		t.Fatal("expected error for unsupported version")
+	}
+}
+
+func TestParseDefaultsVersion(t *testing.T) {
+	guard, err := Parse(`guard "test"
+watch /tmp
+`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if guard.Version != defaultVersion {
+		t.Errorf("expected default version %q, got %q", defaultVersion, guard.Version)
+	}
+}
+
+func TestParseRequiresName(t *testing.T) {
+	_, err := Parse(`version 1.0
+watch /tmp
+`)
+	if err == nil {
+		t.Fatal("expected error for missing guard name")
+	}
+}
+
+func TestMatchesOS(t *testing.T) {
+	cases := []struct {
+		os      string
+		current string
+		want    bool
+	}{
+		{"", "windows", true},
+		{"windows", "windows", true},
+		{"linux", "windows", false},
+		{"windows,linux", "linux", true},
+		{"windows, linux", "linux", true},
+		{"darwin", "linux", false},
+	}
+	for _, c := range cases {
+		g := &Guard{OS: c.os}
+		if got := g.MatchesOS(c.current); got != c.want {
+			t.Errorf("MatchesOS(%q) with os=%q = %v, want %v", c.current, c.os, got, c.want)
+		}
+	}
+}
