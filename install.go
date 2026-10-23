@@ -207,6 +207,10 @@ func doInstall(userService bool) {
 		log.Printf("warning: cannot update PATH: %v", err)
 	}
 
+	if err := enableTrayAutostart(exeDst); err != nil {
+		log.Printf("warning: cannot enable tray autostart: %v", err)
+	}
+
 	fmt.Printf("\ngguard installed to %s\n", targetDir)
 	fmt.Println("You may need to restart your terminal for PATH changes to take effect.")
 }
@@ -271,6 +275,10 @@ func doUninstall(userService bool) {
 
 	if err := removeFromPath(targetDir, !userService); err != nil {
 		log.Printf("warning: cannot update PATH: %v", err)
+	}
+
+	if err := disableTrayAutostart(); err != nil {
+		log.Printf("warning: cannot remove tray autostart: %v", err)
 	}
 
 	removeInstallDir(targetDir)

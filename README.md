@@ -208,14 +208,16 @@ Running `gguard` with no command prints the help. The installer dialog only appe
 | `gguard check <file>` | Validate a `.ggs` script and print the resolved plan (dry run) |
 | `gguard run <file>` | Run a `.ggs` script once, in the foreground |
 | `gguard tray` | Run in the foreground with a system tray icon |
-| `gguard tray --on` / `--off` | Start / stop the tray in the background |
+| `gguard tray --on` / `--off` | Start / stop the tray and persist it across logon |
 | `gguard logs [-f]` | Show the log file (`--follow` to keep it open) |
 
 ### 14. Tray & Notifications
 
-The tray shows the GopherGuard icon with a small status badge in the corner, and the menu lists **every registered guard with its own colored dot**, so you can see how each one is doing.
+The tray shows the GopherGuard icon with a small status badge in the bottom-right corner, and the menu lists **every registered guard with its own colored dot**, so you can see how each one is doing.
 
-Run it in the foreground with `gguard tray`, or detached in the background with `gguard tray --on` (`gguard tray --off` stops it). It works even with no scripts installed — in that case it simply shows the **service state**.
+Run it in the foreground with `gguard tray`, or in the background with `gguard tray --on`. The on/off choice is **persistent**: `--on` registers a logon entry so the tray comes back after a reboot, `--off` removes it and stops the tray. Installing enables it by default, and only one tray runs at a time.
+
+It works even with no scripts installed — in that case it simply shows the **service state**.
 
 | Color | Meaning |
 |-------|---------|

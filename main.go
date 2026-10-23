@@ -142,6 +142,11 @@ func runForeground(ctx context.Context, cancel context.CancelFunc) {
 		return
 	}
 
+	if !acquireTraySingleton() {
+		log.Fatal("another tray is already running (use 'gguard tray --off' to stop it)")
+	}
+	defer releaseTraySingleton()
+
 	done := make(chan struct{})
 	go func() {
 		runGuards(ctx, sess)
@@ -197,8 +202,9 @@ func serviceRunningFor() (running bool, known bool) {
 	return false, false
 }
 
-// doTrayCommand handles the tray subcommand: --on starts a detached background
-// tray, --off stops it, and no flag runs the tray in the foreground.
+// doTrayCommand handles the tray subcommand: --on enables and starts the tray
+// (persisting it across logons), --off stops and disables it, and no flag runs
+// the tray in the foreground.
 func doTrayCommand(on, off bool) {
 	if !trayAvailable() {
 		log.Fatal("the system tray is not supported on this platform")
@@ -206,14 +212,23 @@ func doTrayCommand(on, off bool) {
 
 	switch {
 	case off:
+		if err := disableTrayAutostart(); err != nil {
+			log.Printf("warning: cannot disable tray autostart: %v", err)
+		}
 		stopBackgroundTray()
 	case on:
+		exe, err := os.Executable()
+		if err != nil {
+			log.Fatalf("cannot locate gguard: %v", err)
+		}
+		if err := enableTrayAutostart(exe); err != nil {
+			log.Printf("warning: cannot enable tray autostart: %v", err)
+		}
 		startBackgroundTray()
 	default:
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		runForeground(ctx, cancel)
-		removeOwnTrayPid()
 	}
 }
 
@@ -233,6 +248,24 @@ func readTrayPid(path string) (int, bool) {
 	return pid, true
 }
 
+// acquireTraySingleton makes sure only one tray runs at a time, so the logon
+// entry and a manual 'gguard tray' do not stack up.
+func acquireTraySingleton() bool {
+	pidPath := trayPidPath()
+	if pid, ok := readTrayPid(pidPath); ok && pid != os.Getpid() && processAlive(pid) {
+		return false
+	}
+	_ = os.WriteFile(pidPath, []byte(strconv.Itoa(os.Getpid())), 0644)
+	return true
+}
+
+func releaseTraySingleton() {
+	pidPath := trayPidPath()
+	if pid, ok := readTrayPid(pidPath); ok && pid == os.Getpid() {
+		os.Remove(pidPath)
+	}
+}
+
 func startBackgroundTray() {
 	pidPath := trayPidPath()
 	if pid, ok := readTrayPid(pidPath); ok && processAlive(pid) {
@@ -244,15 +277,19 @@ func startBackgroundTray() {
 	if err != nil {
 		log.Fatalf("cannot locate gguard: %v", err)
 	}
-
-	pid, err := spawnDetached(exe, []string{"tray", "-q"})
-	if err != nil {
+	if _, err := spawnDetached(exe, []string{"tray", "-q"}); err != nil {
 		log.Fatalf("cannot start tray: %v", err)
 	}
-	if err := os.WriteFile(pidPath, []byte(strconv.Itoa(pid)), 0644); err != nil {
-		log.Printf("warning: cannot write pid file: %v", err)
+
+	// Give the child a moment to claim the singleton so we can report its pid.
+	for i := 0; i < 25; i++ {
+		time.Sleep(100 * time.Millisecond)
+		if pid, ok := readTrayPid(pidPath); ok && processAlive(pid) {
+			fmt.Printf("tray on (pid %d)\n", pid)
+			return
+		}
 	}
-	fmt.Printf("tray on (pid %d)\n", pid)
+	fmt.Println("tray on")
 }
 
 func stopBackgroundTray() {
@@ -269,15 +306,6 @@ func stopBackgroundTray() {
 	}
 	os.Remove(pidPath)
 	fmt.Printf("tray off (pid %d)\n", pid)
-}
-
-// removeOwnTrayPid cleans up the pid file when this process is the tray it
-// points to.
-func removeOwnTrayPid() {
-	pidPath := trayPidPath()
-	if pid, ok := readTrayPid(pidPath); ok && pid == os.Getpid() {
-		os.Remove(pidPath)
-	}
 }
 
 type guardsRoutine struct {
@@ -323,7 +351,7 @@ Commands:
   stop                 Stop the service
   restart              Restart the service
   status               Show service status and active guards
-  tray [--on|--off]   Tray icon (no flag: foreground; --on/--off: background)
+  tray [--on|--off]   Tray icon; --on/--off persist across logon (default: on)
   logs [-f]            Show the log file (--follow to keep it open)
   list                 List installed guards
   check <file>         Validate a .ggs script and show what it would do

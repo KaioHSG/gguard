@@ -282,3 +282,35 @@ func uninstallAppsRegistry(system bool) error {
 	log.Println("removed Apps & Features entry")
 	return nil
 }
+
+const (
+	trayRunKey   = `Software\Microsoft\Windows\CurrentVersion\Run`
+	trayRunValue = "GopherGuardTray"
+)
+
+// enableTrayAutostart registers gguard to start the tray when the user logs in,
+// which is what makes 'tray --on' persist across reboots.
+func enableTrayAutostart(exePath string) error {
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, trayRunKey, registry.SET_VALUE)
+	if err != nil {
+		return fmt.Errorf("cannot open Run key: %w", err)
+	}
+	defer key.Close()
+
+	cmd := `"` + exePath + `" tray -q`
+	return key.SetStringValue(trayRunValue, cmd)
+}
+
+// disableTrayAutostart removes the logon entry.
+func disableTrayAutostart() error {
+	key, err := registry.OpenKey(registry.CURRENT_USER, trayRunKey, registry.SET_VALUE)
+	if err != nil {
+		return nil
+	}
+	defer key.Close()
+
+	if err := key.DeleteValue(trayRunValue); err != nil && err != registry.ErrNotExist {
+		return err
+	}
+	return nil
+}

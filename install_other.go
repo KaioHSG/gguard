@@ -116,3 +116,8 @@ func installStartMenuShortcut(targetDir string, system bool) error { return nil 
 func uninstallStartMenuShortcut(system bool) error                 { return nil }
 func installAppsRegistry(_ string, _ bool) error                   { return nil }
 func uninstallAppsRegistry(_ bool) error                           { return nil }
+
+// enableTrayAutostart and disableTrayAutostart manage the logon entry that
+// keeps 'tray --on' persistent. Not implemented off Windows (no tray there).
+func enableTrayAutostart(_ string) error { return nil }
+func disableTrayAutostart() error        { return nil }

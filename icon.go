@@ -67,7 +67,7 @@ const (
 	badgeRadius  = 5.5
 	badgeRing    = 1.5
 	badgeCenterX = 26.0
-	badgeCenterY = 6.0
+	badgeCenterY = 26.0
 )
 
 var badgeOutline = color.RGBA{R: 0x0f, G: 0x17, B: 0x2a, A: 0xff}
