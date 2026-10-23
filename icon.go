@@ -68,9 +68,9 @@ func iconImage() *image.RGBA {
 // Badge geometry, as a fraction of the icon size so it scales with whatever
 // icon is embedded. Bump badgeRadiusRatio to make the dot bigger.
 const (
-	badgeRadiusRatio = 0.26 // dot radius
-	badgeRingRatio   = 0.07 // dark outline width around the dot
-	badgeMarginRatio = 0.02 // gap between the dot and the icon edge
+	badgeRadiusRatio = 0.195 // dot radius (75% of the previous 0.26)
+	badgeRingRatio   = 0.05  // dark outline width around the dot
+	badgeMarginRatio = 0.02  // gap between the dot and the icon edge
 )
 
 var badgeOutline = color.RGBA{R: 0x0f, G: 0x17, B: 0x2a, A: 0xff}
