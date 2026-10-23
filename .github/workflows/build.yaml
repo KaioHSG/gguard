@@ -37,7 +37,7 @@ jobs:
         shell: bash
 
       - name: Build
-        run: bash build.sh --dist
+        run: go run build.go --dist
 
       - uses: softprops/action-gh-release@v3
         with:
