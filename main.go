@@ -164,6 +164,9 @@ Commands:
   restart              Restart the service
   status               Show service status and active guards
   tray                 Run in the foreground with a system tray icon
+  list                 List installed guards
+  check <file>         Validate a .ggs script and show what it would do
+  run <file>           Run a .ggs script once, in the foreground
   import <file>        Import a .ggs script or guards.json
   export               Export all .ggs scripts and guards.json
   version              Show version
@@ -253,6 +256,18 @@ func dispatch(subcmd string, subargs []string) {
 			log.Fatal("import requires a file path")
 		}
 		doImport(subargs[0], targetMode(userFlag))
+	case "list":
+		doList(targetMode(userFlag))
+	case "check":
+		if len(subargs) == 0 {
+			log.Fatal("check requires a file path")
+		}
+		doCheck(subargs[0], targetMode(userFlag))
+	case "run":
+		if len(subargs) == 0 {
+			log.Fatal("run requires a file path")
+		}
+		doRun(subargs[0], targetMode(userFlag))
 	case "export":
 		doExport(targetMode(userFlag))
 	case "version":
@@ -694,4 +709,114 @@ func doExport(mode string) {
 
 	fmt.Println()
 	fmt.Printf("To export as zip, copy the contents of:\n  %s\n", source)
+}
+
+// configForScript prefers a guards.json next to the script (handy while
+// developing a guard) and falls back to the mode's install directory.
+func configForScript(file, mode string) string {
+	local := filepath.Join(filepath.Dir(file), "guards.json")
+	if _, err := os.Stat(local); err == nil {
+		return local
+	}
+	return filepath.Join(configDir(mode), "guards.json")
+}
+
+// loadGuardFile parses a .ggs file and resolves its variables from the matching
+// guards.json entry.
+func loadGuardFile(file, mode string) (*ggs.Guard, map[string]string, error) {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return nil, nil, err
+	}
+	guard, err := ggs.Parse(string(data))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	key := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
+	vars := loadConfig(configForScript(file, mode), key)
+	vars["home"] = userHomeDir()
+	return guard, vars, nil
+}
+
+func doList(mode string) {
+	scriptsDir := filepath.Join(configDir(mode), "gg-scripts")
+	paths := resolveScripts([]string{scriptsDir})
+	if len(paths) == 0 {
+		fmt.Printf("no guards found in %s\n", scriptsDir)
+		return
+	}
+
+	config := loadGuardsConfig(filepath.Join(configDir(mode), "guards.json"))
+
+	fmt.Printf("%-24s %-9s %s\n", "GUARD", "AUTOSTART", "WATCH")
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		guard, err := ggs.Parse(string(data))
+		if err != nil {
+			fmt.Printf("%-24s %-9s %s\n", filepath.Base(path), "-", "invalid: "+err.Error())
+			continue
+		}
+
+		autostart := "no"
+		key := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		if r, ok := config[key]; ok && r.Autostart {
+			autostart = "yes"
+		}
+
+		fmt.Printf("%-24s %-9s %s\n", guard.Name, autostart, guard.Watch)
+	}
+}
+
+func doCheck(file, mode string) {
+	guard, vars, err := loadGuardFile(file, mode)
+	if err != nil {
+		log.Fatalf("cannot check %s: %v", file, err)
+	}
+
+	fmt.Printf("guard:    %s\n", guard.Name)
+	fmt.Printf("version:  %s\n", orDash(guard.Version))
+	fmt.Printf("os:       %s\n", orDash(guard.OS))
+	fmt.Printf("debounce: %s\n", guard.Debounce)
+
+	if guard.OS != "" && guard.OS != runtimeOS() {
+		fmt.Printf("\nwarning: script targets %q but this machine is %q\n", guard.OS, runtimeOS())
+	}
+
+	watch := engine.BuildVars(guard, vars)["watch"]
+	if _, err := os.Stat(watch); err != nil {
+		fmt.Printf("warning: watch path does not exist: %s\n", watch)
+	}
+
+	fmt.Println("\nPlan:")
+	for _, c := range engine.Describe(guard, vars) {
+		fmt.Printf("  %s %s\n", c.Verb, strings.Join(c.Args, " "))
+	}
+	fmt.Println("\nOK")
+}
+
+func doRun(file, mode string) {
+	guard, vars, err := loadGuardFile(file, mode)
+	if err != nil {
+		log.Fatalf("cannot run %s: %v", file, err)
+	}
+
+	fmt.Printf("running %q...\n", guard.Name)
+	runErr := engine.RunOnce(guard, vars, func(cmd engine.ResolvedCommand) {
+		fmt.Printf("  > %s %s\n", cmd.Verb, strings.Join(cmd.Args, " "))
+	})
+	if runErr != nil {
+		log.Fatalf("run failed: %v", runErr)
+	}
+	fmt.Println("done.")
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }

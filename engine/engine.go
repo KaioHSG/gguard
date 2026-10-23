@@ -47,11 +47,7 @@ func (e *Engine) report(running bool, err error) {
 }
 
 func New(guard *ggs.Guard, configVars map[string]string) (*Engine, error) {
-	vars := make(map[string]string)
-	for k, v := range configVars {
-		vars[k] = v
-	}
-	vars["watch"] = resolveVars(guard.Watch, vars)
+	vars := BuildVars(guard, configVars)
 
 	watchPath := vars["watch"]
 	if _, err := os.Stat(watchPath); os.IsNotExist(err) {
