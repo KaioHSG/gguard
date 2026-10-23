@@ -58,7 +58,7 @@ Scripts are loaded from different directories depending on the installation mode
 
 When the **system service** runs, it also loads scripts from the **active user's** config directory (the person currently logged in at the console). This allows each user to have personal backup scripts without needing admin privileges.
 
-To import a script: `gguard --import backup.ggs` (copies to the correct directory automatically).
+To import a script: `gguard import backup.ggs` (copies to the correct directory automatically).
 
 ### guards.json Settings
 

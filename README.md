@@ -45,18 +45,18 @@ message "Backup saved at \"{dest}\""
 
 ```powershell
 # Windows (Run as Administrator)
-.\gguard.exe --install
-.\gguard.exe --start
-.\gguard.exe --status
-.\gguard.exe --stop
+.\gguard.exe install
+.\gguard.exe start
+.\gguard.exe status
+.\gguard.exe stop
 ```
 
 ```bash
 # Linux (with sudo)
-sudo ./gguard --install
-sudo ./gguard --start
-sudo ./gguard --status
-sudo ./gguard --stop
+sudo ./gguard install
+sudo ./gguard start
+sudo ./gguard status
+sudo ./gguard stop
 ```
 
 Installs to:
@@ -67,9 +67,9 @@ Adds to system PATH, registers as a system service (`gguard`), creates Start Men
 
 #### Per-user (no admin required)
 
-```powershell
-.\gguard.exe --install --user
-.\gguard.exe --start --user
+```bash
+./gguard install --user
+./gguard start --user
 ```
 
 Installs to:
@@ -84,24 +84,26 @@ Commands auto-detect whether you need the system or user service based on your p
 
 | Command | Without `--user` | With `--user` |
 |---------|------------------|---------------|
-| `--install` | **system** (needs admin) | **user** (no admin) |
-| `--start` | **system** (needs admin) | **user** |
-| `--stop` | **system** (needs admin) | **user** |
-| `--restart` | **system** (needs admin) | **user** |
-| `--status` | **system** (no admin needed) | **user** |
-| `--import` | **system** (if admin) / **user** (if not) | **user** |
-| `--export` | **system** (if admin) / **user** (if not) | **user** |
+| `install` | **system** (needs admin) | **user** (no admin) |
+| `start` | **system** (needs admin) | **user** |
+| `stop` | **system** (needs admin) | **user** |
+| `restart` | **system** (needs admin) | **user** |
+| `status` | **system** (no admin needed) | **user** |
+| `import` | **system** (if admin) / **user** (if not) | **user** |
+| `export` | **system** (if admin) / **user** (if not) | **user** |
 
 ```
 # As a regular user — operates on your user service
-gguard --status
+gguard status
 
 # As admin — operates on system service
-sudo gguard --status
+sudo gguard status
 
 # Explicit user override (even if running as admin)
-sudo gguard --status --user
+sudo gguard status --user
 ```
+
+The `--user` flag may be placed before or after the command (`gguard --user status` or `gguard status --user`).
 
 ### 7. Multi-User Config (System Service)
 
@@ -127,13 +129,13 @@ Config layers (system service):
 
 ```powershell
 # Import a .ggs script (copies to the correct directory)
-gguard --import backup.ggs
+gguard import backup.ggs
 
 # Import a guards.json (merges with existing, never loses existing keys)
-gguard --import config.json
+gguard import config.json
 
 # Export current scripts and config (lists paths)
-gguard --export
+gguard export
 ```
 
 The target directory depends on mode:
@@ -189,3 +191,8 @@ When running as a service, logs are written to `gguard.log` in the install direc
 - **User**: `%APPDATA%\Programs\GopherGuard\gguard.log`
 
 Use `-q` or `--quiet` to force log-to-file in foreground mode.
+
+---
+
+- [GG Script](GG-Script.md)
+- [Guards JSON](Guards-JSON.md)

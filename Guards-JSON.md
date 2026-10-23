@@ -46,7 +46,7 @@ When the **system service** runs, it loads **both** the global config and the ac
 
 ### Import & Merge
 
-Use `gguard --import config.json` to merge an external config. The merge is **key-replace**:
+Use `gguard import config.json` to merge an external config. The merge is **key-replace**:
 
 - Keys in the imported file **create or fully overwrite** matching keys in the existing file
 - Keys NOT present in the import are **preserved**
