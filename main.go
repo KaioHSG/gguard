@@ -57,10 +57,21 @@ type guardSession struct {
 	tracker *StatusTracker
 	mu      sync.Mutex
 	engines []*engine.Engine
+	loaded  chan struct{}
+	once    sync.Once
 }
 
 func newGuardSession() *guardSession {
-	return &guardSession{tracker: NewStatusTracker()}
+	return &guardSession{
+		tracker: NewStatusTracker(),
+		loaded:  make(chan struct{}),
+	}
+}
+
+// markLoaded signals that the initial script scan is done, so the tray can
+// build its menu with the full guard list.
+func (s *guardSession) markLoaded() {
+	s.once.Do(func() { close(s.loaded) })
 }
 
 func (s *guardSession) add(e *engine.Engine) {
@@ -78,6 +89,23 @@ func (s *guardSession) runAll() {
 
 	for _, e := range engines {
 		go e.RunNow()
+	}
+}
+
+// runOne triggers a single guard by name.
+func (s *guardSession) runOne(name string) {
+	s.mu.Lock()
+	var target *engine.Engine
+	for _, e := range s.engines {
+		if e.Name() == name {
+			target = e
+			break
+		}
+	}
+	s.mu.Unlock()
+
+	if target != nil {
+		go target.RunNow()
 	}
 }
 
@@ -120,9 +148,13 @@ func runForeground(ctx context.Context, cancel context.CancelFunc) {
 		close(done)
 	}()
 
+	// Wait for the initial scan so the tray menu lists every guard.
+	<-sess.loaded
+
 	runTray(trayOptions{
 		tracker:   sess.tracker,
 		runAll:    sess.runAll,
+		runOne:    sess.runOne,
 		logPath:   filepath.Join(exeDir(), "gguard.log"),
 		configDir: exeDir(),
 		onQuit:    cancel,
@@ -556,6 +588,8 @@ func runGuards(ctx context.Context, sess *guardSession) {
 			log.Fatal("no scripts found. Create a gg-scripts/ directory or use --scripts.")
 		}
 	}
+
+	sess.markLoaded()
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

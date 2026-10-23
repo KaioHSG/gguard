@@ -7,6 +7,7 @@ package main
 type trayOptions struct {
 	tracker   *StatusTracker
 	runAll    func()
+	runOne    func(string)
 	logPath   string
 	configDir string
 	onQuit    func()

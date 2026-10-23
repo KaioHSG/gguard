@@ -141,6 +141,11 @@ func (e *Engine) Watch() string {
 	return e.vars["watch"]
 }
 
+// Name returns the guard's name.
+func (e *Engine) Name() string {
+	return e.guard.Name
+}
+
 func (e *Engine) scheduleCleanup(vars map[string]string) {
 	if vars["trusted"] != "true" {
 		return

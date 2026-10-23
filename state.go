@@ -151,6 +151,27 @@ func (t *StatusTracker) Entries() []statusEntry {
 	return entries
 }
 
+// Names returns the guard names in registration order.
+func (t *StatusTracker) Names() []string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	names := make([]string, len(t.order))
+	copy(names, t.order)
+	return names
+}
+
+// State returns the current state of a single guard.
+func (t *StatusTracker) State(name string) GuardState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if g, ok := t.guards[name]; ok {
+		return g.State
+	}
+	return StateIdle
+}
+
 // notify fires every listener without holding the lock, so listeners are free
 // to call back into the tracker.
 func (t *StatusTracker) notify() {

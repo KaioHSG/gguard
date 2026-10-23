@@ -13,6 +13,7 @@ import (
 type trayOptions struct {
 	tracker   *StatusTracker
 	runAll    func()
+	runOne    func(string)
 	logPath   string
 	configDir string
 	onQuit    func()
@@ -28,10 +29,23 @@ func trayAvailable() bool { return true }
 // called from the main goroutine.
 func runTray(opts trayOptions) {
 	systray.Run(func() {
-		status := systray.AddMenuItem("GopherGuard", "Current status")
-		status.Disable()
-		runItem := systray.AddMenuItem("Run now", "Run all guards immediately")
+		header := systray.AddMenuItem("GopherGuard", "Current status")
+		header.Disable()
+
+		// One entry per guard, each with its own colored dot.
+		names := opts.tracker.Names()
+		guardItems := make(map[string]*systray.MenuItem, len(names))
+		if len(names) > 0 {
+			systray.AddSeparator()
+			for _, name := range names {
+				item := systray.AddMenuItem(name, "Run this guard now")
+				item.SetIcon(statusDotICO(opts.tracker.State(name)))
+				guardItems[name] = item
+			}
+		}
+
 		systray.AddSeparator()
+		runItem := systray.AddMenuItem("Run all now", "Run every guard immediately")
 		logItem := systray.AddMenuItem("Open log", "Open gguard.log")
 		dirItem := systray.AddMenuItem("Open folder", "Open the install folder")
 		systray.AddSeparator()
@@ -43,9 +57,13 @@ func runTray(opts trayOptions) {
 			if opts.status != nil {
 				state, label = opts.status()
 			}
-			systray.SetIcon(statusDotICO(state))
+			systray.SetIcon(trayIconICO(state))
 			systray.SetTooltip("GopherGuard — " + label)
-			status.SetTitle("Status: " + label)
+			header.SetTitle("GopherGuard — " + label)
+
+			for name, item := range guardItems {
+				item.SetIcon(statusDotICO(opts.tracker.State(name)))
+			}
 		}
 
 		opts.tracker.AddListener(refresh)
@@ -81,6 +99,17 @@ func runTray(opts trayOptions) {
 				}
 			}
 		}()
+
+		// Per-guard click handlers.
+		for name, item := range guardItems {
+			go func(name string, item *systray.MenuItem) {
+				for range item.ClickedCh {
+					if opts.runOne != nil {
+						go opts.runOne(name)
+					}
+				}
+			}(name, item)
+		}
 	}, func() {})
 }
 

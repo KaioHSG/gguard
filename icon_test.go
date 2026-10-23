@@ -2,11 +2,14 @@ package main
 
 import (
 	"encoding/binary"
+	"image/png"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
-func TestEncodeICOHeader(t *testing.T) {
-	ico := statusDotICO(StateOK)
+func checkICO(t *testing.T, ico []byte, wantSize int) {
+	t.Helper()
 
 	if len(ico) < 22 {
 		t.Fatalf("ico too small: %d bytes", len(ico))
@@ -20,12 +23,11 @@ func TestEncodeICOHeader(t *testing.T) {
 	if got := binary.LittleEndian.Uint16(ico[4:]); got != 1 {
 		t.Errorf("count = %d, want 1", got)
 	}
-
-	if w := ico[6]; w != 32 {
-		t.Errorf("entry width = %d, want 32", w)
+	if w := int(ico[6]); w != wantSize {
+		t.Errorf("entry width = %d, want %d", w, wantSize)
 	}
-	if h := ico[7]; h != 32 {
-		t.Errorf("entry height = %d, want 32", h)
+	if h := int(ico[7]); h != wantSize {
+		t.Errorf("entry height = %d, want %d", h, wantSize)
 	}
 	if bpp := binary.LittleEndian.Uint16(ico[12:]); bpp != 32 {
 		t.Errorf("bpp = %d, want 32", bpp)
@@ -33,11 +35,14 @@ func TestEncodeICOHeader(t *testing.T) {
 	if off := binary.LittleEndian.Uint32(ico[18:]); off != 22 {
 		t.Errorf("image offset = %d, want 22", off)
 	}
-
-	size := binary.LittleEndian.Uint32(ico[14:])
-	if int(size) != len(ico)-22 {
+	if size := binary.LittleEndian.Uint32(ico[14:]); int(size) != len(ico)-22 {
 		t.Errorf("image size = %d, want %d", size, len(ico)-22)
 	}
+}
+
+func TestEncodeICOHeader(t *testing.T) {
+	checkICO(t, statusDotICO(StateOK), 16)
+	checkICO(t, trayIconICO(StateOK), 32)
 }
 
 func TestColorForState(t *testing.T) {
@@ -80,6 +85,32 @@ func TestAggregatePriority(t *testing.T) {
 	tr.SetResult("b", errTest)
 	if got := tr.Aggregate(); got != StateError {
 		t.Fatalf("after error = %v, want error", got)
+	}
+}
+
+// TestRenderTrayPreview writes the composed tray icons as PNGs so they can be
+// inspected visually. Skipped unless GGUARD_PREVIEW_DIR is set.
+func TestRenderTrayPreview(t *testing.T) {
+	dir := os.Getenv("GGUARD_PREVIEW_DIR")
+	if dir == "" {
+		t.Skip("set GGUARD_PREVIEW_DIR to render previews")
+	}
+
+	for _, s := range []GuardState{StateOK, StateIdle, StateError, StateRunning} {
+		img := gopherImage(trayIconSize)
+		if img == nil {
+			t.Fatal("cannot decode gopher icon")
+		}
+		drawBadge(img, colorForState(s))
+
+		f, err := os.Create(filepath.Join(dir, s.String()+".png"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(f, img); err != nil {
+			t.Fatal(err)
+		}
+		f.Close()
 	}
 }
 

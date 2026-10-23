@@ -213,7 +213,9 @@ Running `gguard` with no command prints the help. The installer dialog only appe
 
 ### 14. Tray & Notifications
 
-The tray shows a colored dot reflecting the overall state. It runs in the foreground with `gguard tray`, or detached in the background with `gguard tray --on` (`gguard tray --off` stops it). It works even with no scripts installed — in that case it simply shows the **service state**.
+The tray shows the GopherGuard icon with a small status badge in the corner, and the menu lists **every registered guard with its own colored dot**, so you can see how each one is doing.
+
+Run it in the foreground with `gguard tray`, or detached in the background with `gguard tray --on` (`gguard tray --off` stops it). It works even with no scripts installed — in that case it simply shows the **service state**.
 
 | Color | Meaning |
 |-------|---------|
@@ -222,7 +224,7 @@ The tray shows a colored dot reflecting the overall state. It runs in the foregr
 | 🔴 Red | The last run failed |
 | 🔵 Blue | A guard is running right now |
 
-Clicking the icon opens a small menu: **status**, **Run now**, **Open log**, **Open folder**, **Quit**.
+Clicking a guard runs that guard; **Run all now** runs every guard. The other entries open the log and the install folder, or quit the tray.
 
 When a guard uses the `message` or `notify` verb, GopherGuard also raises a native desktop notification (Windows toast, `notify-send` on Linux, `osascript` on macOS).
 
