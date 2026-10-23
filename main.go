@@ -38,8 +38,91 @@ func (s *scriptsList) Set(v string) error {
 }
 
 type statusEntry struct {
-	Name  string `json:"name"`
-	Watch string `json:"watch"`
+	Name      string `json:"name"`
+	Watch     string `json:"watch"`
+	State     string `json:"state"`
+	Runs      int    `json:"runs"`
+	LastError string `json:"last_error,omitempty"`
+}
+
+// guardSession owns the running engines so actions like "run now" can reach
+// them, and exposes the shared status tracker.
+type guardSession struct {
+	tracker *StatusTracker
+	mu      sync.Mutex
+	engines []*engine.Engine
+}
+
+func newGuardSession() *guardSession {
+	return &guardSession{tracker: NewStatusTracker()}
+}
+
+func (s *guardSession) add(e *engine.Engine) {
+	s.mu.Lock()
+	s.engines = append(s.engines, e)
+	s.mu.Unlock()
+}
+
+// runAll triggers every guard immediately (tray "Run now").
+func (s *guardSession) runAll() {
+	s.mu.Lock()
+	engines := make([]*engine.Engine, len(s.engines))
+	copy(engines, s.engines)
+	s.mu.Unlock()
+
+	for _, e := range engines {
+		go e.RunNow()
+	}
+}
+
+func (s *guardSession) count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.engines)
+}
+
+func (s *guardSession) stopAll() {
+	s.mu.Lock()
+	engines := make([]*engine.Engine, len(s.engines))
+	copy(engines, s.engines)
+	s.mu.Unlock()
+
+	var wg sync.WaitGroup
+	for _, e := range engines {
+		wg.Add(1)
+		go func(e *engine.Engine) {
+			defer wg.Done()
+			e.Stop()
+		}(e)
+	}
+	wg.Wait()
+}
+
+// runForeground runs the guards and, on platforms with a tray, keeps a tray
+// icon alive on the main goroutine until the user quits it.
+func runForeground(ctx context.Context, cancel context.CancelFunc) {
+	sess := newGuardSession()
+
+	if !trayAvailable() {
+		runGuards(ctx, sess)
+		return
+	}
+
+	done := make(chan struct{})
+	go func() {
+		runGuards(ctx, sess)
+		close(done)
+	}()
+
+	runTray(trayOptions{
+		tracker:   sess.tracker,
+		runAll:    sess.runAll,
+		logPath:   filepath.Join(exeDir(), "gguard.log"),
+		configDir: exeDir(),
+		onQuit:    cancel,
+	})
+
+	<-done
 }
 
 type guardsRoutine struct {
@@ -80,6 +163,7 @@ Commands:
   stop                 Stop the service
   restart              Restart the service
   status               Show service status and active guards
+  tray                 Run in the foreground with a system tray icon
   import <file>        Import a .ggs script or guards.json
   export               Export all .ggs scripts and guards.json
   version              Show version
@@ -135,7 +219,7 @@ func main() {
 	if isTerminal() || hasCLIFlags() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		runGuards(ctx)
+		runForeground(ctx, cancel)
 		return
 	}
 
@@ -160,6 +244,10 @@ func dispatch(subcmd string, subargs []string) {
 		prg := &program{}
 		s := newService(prg, targetMode(userFlag) == "user")
 		showStatus(s)
+	case "tray":
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		runForeground(ctx, cancel)
 	case "import":
 		if len(subargs) == 0 {
 			log.Fatal("import requires a file path")
@@ -182,9 +270,14 @@ func hasCLIFlags() bool {
 	return quietFlag || len(scriptsFlag) > 0 || guardsFlag != ""
 }
 
-func runGuards(ctx context.Context) {
+func runGuards(ctx context.Context, sess *guardSession) {
 	exeDir := exeDir()
 	statusPath := filepath.Join(exeDir, "gguard.status.json")
+
+	tracker := sess.tracker
+	tracker.AddListener(func() {
+		writeStatus(statusPath, tracker.Entries())
+	})
 
 	if !isServiceMode() && quietFlag {
 		logFile := filepath.Join(exeDir, "gguard.log")
@@ -222,14 +315,6 @@ func runGuards(ctx context.Context) {
 	}
 
 	home := userHomeDir()
-
-	type instance struct {
-		eng  *engine.Engine
-		name string
-	}
-
-	var instances []instance
-	var statusEntries []statusEntry
 
 	userCfgDir := ""
 	if userConfigPath != "" {
@@ -273,19 +358,26 @@ func runGuards(ctx context.Context) {
 				continue
 			}
 
+			eng.SetObserver(func(name string, running bool, err error) {
+				if running {
+					tracker.SetRunning(name)
+					return
+				}
+				tracker.SetResult(name, err)
+			})
+			tracker.Add(guard.Name, eng.Watch())
+
 			eng.Start(ctx2)
-			instances = append(instances, instance{eng: eng, name: guard.Name})
-			statusEntries = append(statusEntries, statusEntry{Name: guard.Name, Watch: eng.Watch()})
+			sess.add(eng)
 			log.Printf("gguard: monitoring %q for %q", guard.Watch, guard.Name)
 		}
 
-		if len(instances) > 0 {
-			writeStatus(statusPath, statusEntries)
-			log.Printf("gguard: %d guard(s) running", len(instances))
+		if n := sess.count(); n > 0 {
+			log.Printf("gguard: %d guard(s) running", n)
 		}
 	}
 
-	if len(instances) == 0 {
+	if sess.count() == 0 {
 		if isServiceMode() {
 			log.Println("gguard: no scripts found. Add .ggs files and restart the service.")
 		} else {
@@ -304,16 +396,7 @@ func runGuards(ctx context.Context) {
 	}
 
 	log.Println("gguard: shutting down...")
-	var wg sync.WaitGroup
-	for _, inst := range instances {
-		wg.Add(1)
-		go func(inst instance) {
-			defer wg.Done()
-			log.Printf("gguard: stopping %q...", inst.name)
-			inst.eng.Stop()
-		}(inst)
-	}
-	wg.Wait()
+	sess.stopAll()
 	log.Println("gguard: stopped")
 
 	os.Remove(statusPath)
@@ -363,22 +446,30 @@ func loadGuardsConfig(path string) map[string]guardsRoutine {
 }
 
 func showStatus(s service.Service) {
-	status, err := s.Status()
-	if err != nil {
-		fmt.Printf("gguard: %v\n", err)
-		return
+	var info string
+	if status, err := s.Status(); err != nil {
+		info = fmt.Sprintf("gguard service: not installed (%v)", err)
+	} else {
+		info = fmt.Sprintf("gguard service is %s", statusMessage(status))
 	}
 
-	info := fmt.Sprintf("gguard is %s", statusMessage(status))
-
 	statusPath := filepath.Join(exeDir(), "gguard.status.json")
-	statusData, err := os.ReadFile(statusPath)
-	if err == nil {
+	if statusData, err := os.ReadFile(statusPath); err == nil {
 		var entries []statusEntry
 		if json.Unmarshal(statusData, &entries) == nil && len(entries) > 0 {
-			info += "\n\nActive guards:"
+			info += "\n\nGuards:"
 			for _, e := range entries {
-				info += fmt.Sprintf("\n  * %s -> %s", e.Name, e.Watch)
+				state := e.State
+				if state == "" {
+					state = "idle"
+				}
+				info += fmt.Sprintf("\n  [%s] %s -> %s", state, e.Name, e.Watch)
+				if e.Runs > 0 {
+					info += fmt.Sprintf(" (%d run(s))", e.Runs)
+				}
+				if e.LastError != "" {
+					info += fmt.Sprintf("\n      last error: %s", e.LastError)
+				}
 			}
 		}
 	}

@@ -15,6 +15,10 @@ import (
 	"github.com/KaioHSG/gguard/ggs"
 )
 
+// Observer is notified when a guard starts running (running=true) and when it
+// finishes (running=false, err is nil on success).
+type Observer func(name string, running bool, err error)
+
 type Engine struct {
 	guard      *ggs.Guard
 	vars       map[string]string
@@ -23,6 +27,23 @@ type Engine struct {
 	cancelFunc context.CancelFunc
 	cacheTimer *time.Timer
 	mu         sync.Mutex
+	observer   Observer
+}
+
+// SetObserver installs a callback that reports run start/finish transitions.
+func (e *Engine) SetObserver(o Observer) {
+	e.mu.Lock()
+	e.observer = o
+	e.mu.Unlock()
+}
+
+func (e *Engine) report(running bool, err error) {
+	e.mu.Lock()
+	o := e.observer
+	e.mu.Unlock()
+	if o != nil {
+		o(e.guard.Name, running, err)
+	}
 }
 
 func New(guard *ggs.Guard, configVars map[string]string) (*Engine, error) {
@@ -54,24 +75,7 @@ func (e *Engine) Start(ctx context.Context) {
 	ctx, e.cancelFunc = context.WithCancel(ctx)
 
 	e.debouncer.OnFire(func(file string) {
-		vars := make(map[string]string)
-		for k, v := range e.vars {
-			vars[k] = v
-		}
-		vars["timestamp"] = time.Now().Format("2006-01-02_15-04-05")
-		vars["file"] = filepath.Base(file)
-
-		disp := NewDispatcher(vars)
-		for _, cmd := range e.guard.Commands {
-			if err := disp.Execute(cmd); err != nil {
-				log.Printf("[%s] error executing %s: %v", e.guard.Name, cmd.Verb, err)
-			}
-		}
-
-		drainEvents(e.watcher.Events())
-
-		e.scheduleCleanup(vars)
-		e.scheduleFreeCache(vars)
+		e.execute(file)
 	})
 
 	go e.watcher.Start(ctx)
@@ -88,6 +92,41 @@ func (e *Engine) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// RunNow executes the guard immediately, bypassing the debouncer. Used by the
+// "run now" tray action and the run command.
+func (e *Engine) RunNow() {
+	e.execute("")
+}
+
+func (e *Engine) execute(file string) {
+	e.report(true, nil)
+
+	vars := make(map[string]string)
+	for k, v := range e.vars {
+		vars[k] = v
+	}
+	vars["timestamp"] = time.Now().Format("2006-01-02_15-04-05")
+	vars["file"] = filepath.Base(file)
+
+	var runErr error
+	disp := NewDispatcher(vars)
+	for _, cmd := range e.guard.Commands {
+		if err := disp.Execute(cmd); err != nil {
+			log.Printf("[%s] error executing %s: %v", e.guard.Name, cmd.Verb, err)
+			if runErr == nil {
+				runErr = err
+			}
+		}
+	}
+
+	drainEvents(e.watcher.Events())
+
+	e.scheduleCleanup(vars)
+	e.scheduleFreeCache(vars)
+
+	e.report(false, runErr)
 }
 
 func (e *Engine) Stop() {

@@ -20,7 +20,7 @@ type program struct {
 
 func (p *program) Start(s service.Service) error {
 	p.ctx, p.cancel = context.WithCancel(context.Background())
-	go runGuards(p.ctx)
+	go runGuards(p.ctx, newGuardSession())
 	return nil
 }
 
