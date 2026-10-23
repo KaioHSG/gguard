@@ -250,15 +250,32 @@ func dispatch(subcmd string, subargs []string) {
 	case "upgrade":
 		doUpgrade()
 	case "start", "stop", "restart":
+		userService, installed := resolveService()
+		if !installed {
+			log.Fatal("gguard is not installed. Run 'gguard install' first.")
+		}
+
 		prg := &program{}
-		s := newService(prg, targetMode(userFlag) == "user")
+		s := newService(prg, userService)
+
+		if subcmd == "start" {
+			if st, err := s.Status(); err == nil && st == service.StatusRunning {
+				log.Println("gguard service is already running.")
+				return
+			}
+		}
+
 		if err := serviceControl(s, subcmd); err != nil {
+			elevationHint(userService)
 			log.Fatal(err)
 		}
 	case "status":
+		userService, installed := resolveService()
 		prg := &program{}
-		s := newService(prg, targetMode(userFlag) == "user")
-		showStatus(s)
+		s := newService(prg, userService)
+		if err := showStatus(s); err != nil && installed {
+			elevationHint(userService)
+		}
 	case "tray":
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
@@ -474,10 +491,12 @@ func loadGuardsConfig(path string) map[string]guardsRoutine {
 	return config
 }
 
-func showStatus(s service.Service) {
+func showStatus(s service.Service) error {
 	var info string
+	var statusErr error
 	if status, err := s.Status(); err != nil {
-		info = fmt.Sprintf("gguard service: not installed (%v)", err)
+		statusErr = err
+		info = fmt.Sprintf("gguard service: %v", err)
 	} else {
 		info = fmt.Sprintf("gguard service is %s", statusMessage(status))
 	}
@@ -504,6 +523,7 @@ func showStatus(s service.Service) {
 	}
 
 	fmt.Println(info)
+	return statusErr
 }
 
 func exeDir() string {
@@ -622,6 +642,34 @@ func targetMode(userFlag bool) string {
 		return "system"
 	}
 	return "user"
+}
+
+// resolveService decides which service a control command should act on. With an
+// explicit --user flag it trusts the flag; otherwise it detects what is actually
+// installed, so 'gguard start' works regardless of the current privileges.
+func resolveService() (userService bool, installed bool) {
+	if userFlagExplicit() {
+		name := "gguard"
+		if userFlag {
+			name = "gguard-user"
+		}
+		return userFlag, serviceExists(name)
+	}
+	return detectInstallType()
+}
+
+// elevationHint explains how to run a system-wide (global) service command with
+// the privileges it needs. It stays quiet for user installs or when already
+// elevated.
+func elevationHint(userService bool) {
+	if userService || isAdmin() {
+		return
+	}
+	if runtimeOS() == "windows" {
+		log.Println("hint: GopherGuard is installed system-wide; re-run this command as administrator (from an elevated terminal)")
+		return
+	}
+	log.Println("hint: GopherGuard is installed system-wide; re-run this command with sudo")
 }
 
 func configDir(mode string) string {

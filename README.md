@@ -80,7 +80,9 @@ Registers as a user service (`gguard-user`), runs under your account while logge
 
 ### 6. Service Management (Auto-detect Mode)
 
-Commands auto-detect whether you need the system or user service based on your privileges:
+`start`, `stop`, `restart` and `status` first detect **which service is actually installed** (system `gguard` or user `gguard-user`), so they keep working regardless of your current privileges. When the command needs elevation for a system-wide install, gguard prints a hint to re-run as administrator (Windows) or with `sudo` (Linux).
+
+The remaining commands auto-detect the system/user service based on your privileges:
 
 | Command | Without `--user` | With `--user` |
 |---------|------------------|---------------|
