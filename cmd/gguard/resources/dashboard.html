@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GopherGuard</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --panel: #1e293b;
+    --line: #334155;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --ok: #22c55e;
+    --idle: #eab308;
+    --error: #ef4444;
+    --running: #3b82f6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 { margin: 0; font-size: 16px; font-weight: 600; }
+  .ver { margin-left: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+  .spacer { flex: 1; }
+  .pill {
+    font-size: 12px;
+    padding: 3px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--muted);
+  }
+  main { max-width: 940px; margin: 0 auto; padding: 20px; }
+  .overall { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; font-size: 15px; }
+  .dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--idle); }
+  .dot.ok { background: var(--ok); }
+  .dot.idle { background: var(--idle); }
+  .dot.error { background: var(--error); }
+  .dot.running { background: var(--running); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  td.state { white-space: nowrap; }
+  td.watch, td.err { font-size: 12px; color: var(--muted); word-break: break-all; }
+  td.err { color: var(--error); margin-top: 2px; }
+  td.empty { padding: 18px 12px; color: var(--muted); }
+  button {
+    font: inherit;
+    font-size: 13px;
+    padding: 5px 12px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #273449;
+    color: var(--text);
+    cursor: pointer;
+  }
+  button:hover { background: var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  .actions { display: flex; gap: 8px; margin-top: 14px; }
+  details { margin-top: 22px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+  pre {
+    margin: 10px 0 0;
+    padding: 12px;
+    max-height: 320px;
+    overflow: auto;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #0b1220;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  footer { margin-top: 18px; font-size: 12px; color: var(--muted); word-break: break-all; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GopherGuard<span class="ver" id="version"></span></h1>
+  <span class="spacer"></span>
+  <span class="pill" id="service">service: …</span>
+</header>
+<main>
+  <div class="overall">
+    <span class="dot" id="overall-dot"></span>
+    <span id="overall-label">loading…</span>
+  </div>
+
+  <table>
+    <thead>
+      <tr><th>Guard</th><th>Watch</th><th>State</th><th>Runs</th><th></th></tr>
+    </thead>
+    <tbody id="rows"></tbody>
+  </table>
+
+  <div class="actions">
+    <button id="run-all">Run all now</button>
+    <button id="quit">Quit</button>
+  </div>
+
+  <details open>
+    <summary>Log</summary>
+    <pre id="log">…</pre>
+  </details>
+
+  <footer id="scripts-dir"></footer>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+
+function post(path, body) {
+  return fetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body || {}),
+  });
+}
+
+function cell(row, className, text) {
+  const td = document.createElement("td");
+  if (className) td.className = className;
+  td.textContent = text;
+  row.appendChild(td);
+  return td;
+}
+
+function render(state) {
+  $("version").textContent = state.version ? " v" + state.version : "";
+  $("service").textContent = "service: " + state.service;
+
+  $("overall-dot").className = "dot " + state.overall;
+  $("overall-label").textContent = state.label;
+
+  const tbody = $("rows");
+  tbody.textContent = "";
+
+  const guards = state.guards || [];
+  if (guards.length === 0) {
+    const row = document.createElement("tr");
+    const td = document.createElement("td");
+    td.className = "empty";
+    td.colSpan = 5;
+    td.textContent = "No guards installed.";
+    row.appendChild(td);
+    tbody.appendChild(row);
+  }
+
+  for (const g of guards) {
+    const row = document.createElement("tr");
+
+    cell(row, "", g.name || "(unnamed)");
+    cell(row, "watch", g.watch || "—");
+
+    const stateCell = cell(row, "state", "");
+    const dot = document.createElement("span");
+    dot.className = "dot " + (g.state || "idle");
+    stateCell.appendChild(dot);
+    stateCell.append(" " + (g.state || "idle"));
+    if (g.last_error) {
+      const err = document.createElement("div");
+      err.className = "err";
+      err.textContent = g.last_error;
+      stateCell.appendChild(err);
+    }
+
+    cell(row, "", String(g.runs || 0));
+
+    const actions = cell(row, "", "");
+    const run = document.createElement("button");
+    run.textContent = "Run";
+    run.onclick = () => {
+      run.disabled = true;
+      post("api/run", { name: g.name }).catch(() => {});
+      setTimeout(() => { run.disabled = false; refresh(); }, 800);
+    };
+    actions.appendChild(run);
+
+    tbody.appendChild(row);
+  }
+
+  const log = $("log");
+  const text = state.log || "(empty)";
+  if (log.textContent !== text) log.textContent = text;
+
+  $("scripts-dir").textContent = "Scripts folder: " + (state.scripts_dir || "—");
+}
+
+let stopped = false;
+
+async function refresh() {
+  if (stopped) return;
+  try {
+    const resp = await fetch("api/state");
+    if (resp.ok) render(await resp.json());
+  } catch (e) {
+    $("overall-label").textContent = "GopherGuard is not responding…";
+  }
+}
+
+$("run-all").onclick = () => {
+  $("run-all").disabled = true;
+  post("api/run").catch(() => {});
+  setTimeout(() => { $("run-all").disabled = false; refresh(); }, 800);
+};
+
+$("quit").onclick = () => {
+  stopped = true;
+  post("api/quit").catch(() => {});
+  $("overall-dot").className = "dot idle";
+  $("overall-label").textContent = "Stopped. You can close this tab.";
+  $("quit").disabled = true;
+};
+
+refresh();
+setInterval(refresh, 2000);
+</script>
+</body>
+</html>

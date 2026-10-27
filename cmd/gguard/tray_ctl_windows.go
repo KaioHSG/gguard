@@ -3,6 +3,8 @@
 package main
 
 import (
+	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -34,7 +36,49 @@ var (
 	procOpenServiceW     = advapi32.NewProc("OpenServiceW")
 	procQueryServiceStat = advapi32.NewProc("QueryServiceStatus")
 	procCloseServiceHnd  = advapi32.NewProc("CloseServiceHandle")
+
+	kernel32        = syscall.NewLazyDLL("kernel32.dll")
+	procFreeConsole = kernel32.NewProc("FreeConsole")
+	procMessageBoxW = user32.NewProc("MessageBoxW")
 )
+
+const (
+	mbOK        = 0x00000000
+	mbIconError = 0x00000010
+)
+
+// consoleHidden records that this process gave up its console, so fatal errors
+// are reported with a message box instead of vanishing with the window.
+var consoleHidden bool
+
+// hideOwnConsole closes the console window Windows opened for this process.
+// It runs when gguard is started without a shell — a double-click, the Start
+// Menu shortcut or the logon entry — so the tray and the dashboard appear
+// without a stray black window. A console shared with a parent shell is left
+// alone, keeping normal command line usage intact.
+func hideOwnConsole() {
+	if consoleHidden || isTerminal() {
+		return
+	}
+	consoleHidden = true
+	procFreeConsole.Call()
+}
+
+// fatalUserError reports a fatal error and exits. With no console left it
+// falls back to a message box, so a double-clicked gguard never fails
+// silently.
+func fatalUserError(format string, args ...any) {
+	msg := fmt.Sprintf("gguard: "+format, args...)
+	log.Print(msg)
+	if !consoleHidden {
+		os.Exit(1)
+	}
+
+	title, _ := syscall.UTF16PtrFromString("GopherGuard")
+	text, _ := syscall.UTF16PtrFromString(msg)
+	procMessageBoxW.Call(0, uintptr(unsafe.Pointer(text)), uintptr(unsafe.Pointer(title)), mbOK|mbIconError)
+	os.Exit(1)
+}
 
 // serviceRunning reports whether a Windows service exists and is running. It
 // opens the service manager with minimal access so it works without

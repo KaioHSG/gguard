@@ -38,8 +38,10 @@ cmd/gguard/          — main package (the CLI binary)
   icon.go            — tray/app icon rendering (embeds winres/icons/)
   state.go           — runtime state/status file
   tray*.go           — system tray UI (Windows/non-Windows, systray)
+  gui.go             — loopback dashboard (doGUI, startDashboard, log ring, tray integration)
+  open.go            — openURL()/openPath(): default browser/handler per platform
   resources.go       — embeds the resources/ directory
-  resources/         — embedded assets (gguard.desktop, gguard.png)
+  resources/         — embedded assets (gguard.desktop, gguard.png, dashboard.html)
   winres/            — go-winres config + icons (winres.json, icons/)
   icon_test.go       — icon rendering tests
 build.go             — cross-platform build script (go run build.go [--dist]); replaces build.ps1/build.sh
@@ -74,6 +76,12 @@ docs/                — GG-Script.md, Guards-JSON.md documentation
 - `userConfigDir()`: returns the current process user's config dir (same as `installTargetDir(true)`).
 - `targetMode()`: auto-detects system/user based on admin status; `--user` always overrides to user.
 - `serviceControl()` returns `error` instead of calling log.Fatalf (callers decide).
+- `runForeground(ctx, cancel, foregroundOptions)` is the only foreground entry point: guards + tray (when the tray setting is on, or forced by `gguard tray`) + dashboard (`gguard gui`, or whenever the tray is up). It blocks until the guards stop.
+- The tray is a **setting**, not a command: `trayEnabled()` reads the per-user logon entry written by `enableTrayAutostart()` and removed by `disableTrayAutostart()`. `doInstall()` enables it only for a fresh install, so an upgrade never overrides `tray --off`.
+- Launcher-started processes (double-click, Start Menu shortcut, logon entry) call `hideOwnConsole()` and report errors through `fatalUserError()`, which uses a message box when the console is gone.
+- `doGUI()` opens the existing dashboard when one already answers on `guiDefaultPort` (8642), so only one process ever runs the guards; `quitDashboard()` lets `tray --off` stop an instance with no usable pid file.
+- `teeLogs()` mirrors the process log into a ring buffer so the dashboard shows it even when the console is gone; `logTee` adds `gguard.log` to the same output in quiet mode.
+- `trayPidPath()` lives in the user cache dir, because a system install directory (Program Files) is not writable by the user running the tray.
 - PATH modification uses `SetExpandStringValue` for system PATH / when original was REG_EXPAND_SZ.
 - `doImport()`: copies `.ggs` or merges `guards.json` (replace total per routine key).
 - `doExport()`: lists all `.ggs` and `guards.json` paths for the current mode.

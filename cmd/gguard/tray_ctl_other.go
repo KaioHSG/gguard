@@ -2,9 +2,21 @@
 
 package main
 
-import "errors"
+import (
+	"errors"
+	"log"
+)
 
 var errTrayUnsupported = errors.New("tray process control is not supported on this platform")
+
+// hideOwnConsole is a no-op off Windows: processes do not get a console window
+// of their own there.
+func hideOwnConsole() {}
+
+// fatalUserError reports a fatal error and exits.
+func fatalUserError(format string, args ...any) {
+	log.Fatalf(format, args...)
+}
 
 // serviceRunning reports whether a Windows service is running. Always unknown
 // off Windows; the tray is unavailable there anyway.

@@ -204,7 +204,9 @@ func installStartMenuShortcut(targetDir string, system bool) error {
 	exePath := filepath.Join(targetDir, exeName())
 	shortcutPath := filepath.Join(dir, "GopherGuard.lnk")
 
-	if err := createShellLink(exePath, shortcutPath, "File watcher and backup automator"); err != nil {
+	// The shortcut opens the dashboard, which also brings up the tray when the
+	// tray setting is on.
+	if err := createShellLink(exePath, shortcutPath, "gui", "File watcher and backup automator"); err != nil {
 		return err
 	}
 
@@ -228,10 +230,10 @@ func uninstallDesktopEntry(_ bool) error         { return nil }
 func installIcon(_ bool) error                   { return nil }
 func uninstallIcon(_ bool) error                 { return nil }
 
-func createShellLink(targetPath, shortcutPath, description string) error {
+func createShellLink(targetPath, shortcutPath, args, description string) error {
 	cmd := fmt.Sprintf(
-		`$ws=New-Object -ComObject WScript.Shell;$s=$ws.CreateShortcut('%s');$s.TargetPath='%s';$s.Description='%s';$s.Save()`,
-		shortcutPath, targetPath, strings.ReplaceAll(description, "'", "''"),
+		`$ws=New-Object -ComObject WScript.Shell;$s=$ws.CreateShortcut('%s');$s.TargetPath='%s';$s.Arguments='%s';$s.Description='%s';$s.Save()`,
+		shortcutPath, targetPath, strings.ReplaceAll(args, "'", "''"), strings.ReplaceAll(description, "'", "''"),
 	)
 	return exec.Command("powershell", "-NoProfile", "-Command", cmd).Run()
 }
@@ -299,6 +301,20 @@ func enableTrayAutostart(exePath string) error {
 
 	cmd := `"` + exePath + `" tray -q`
 	return key.SetStringValue(trayRunValue, cmd)
+}
+
+// trayEnabled reports whether the tray is turned on. It is the "tray on/off"
+// setting, so every entry point (logon, Start Menu shortcut, 'gui') agrees on
+// whether a tray icon should show.
+func trayEnabled() bool {
+	key, err := registry.OpenKey(registry.CURRENT_USER, trayRunKey, registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	defer key.Close()
+
+	_, _, err = key.GetStringValue(trayRunValue)
+	return err == nil
 }
 
 // disableTrayAutostart removes the logon entry.

@@ -3,7 +3,6 @@
 package main
 
 import (
-	"os/exec"
 	"time"
 
 	"fyne.io/systray"
@@ -20,10 +19,16 @@ type trayOptions struct {
 	// status returns the overall state and a short label to display. When no
 	// guards are loaded it reports the service state instead.
 	status func() (GuardState, string)
+	// dashboardURL, when set, adds a menu entry that opens the web dashboard.
+	dashboardURL string
 }
 
 // trayAvailable reports whether a system tray can be shown on this platform.
 func trayAvailable() bool { return true }
+
+// quitTray closes the tray icon, ending runTray. It is safe to call even when
+// the tray was never shown.
+func quitTray() { systray.Quit() }
 
 // runTray shows the tray icon and blocks until the user quits it. It must be
 // called from the main goroutine.
@@ -45,6 +50,10 @@ func runTray(opts trayOptions) {
 		}
 
 		systray.AddSeparator()
+		var dashCh chan struct{}
+		if opts.dashboardURL != "" {
+			dashCh = systray.AddMenuItem("Open dashboard", "Open the web dashboard in your browser").ClickedCh
+		}
 		runItem := systray.AddMenuItem("Run all now", "Run every guard immediately")
 		logItem := systray.AddMenuItem("Open log", "Open gguard.log")
 		dirItem := systray.AddMenuItem("Open folder", "Open the install folder")
@@ -82,6 +91,8 @@ func runTray(opts trayOptions) {
 		go func() {
 			for {
 				select {
+				case <-dashCh:
+					openURL(opts.dashboardURL)
 				case <-runItem.ClickedCh:
 					if opts.runAll != nil {
 						go opts.runAll()
@@ -111,12 +122,4 @@ func runTray(opts trayOptions) {
 			}(name, item)
 		}
 	}, func() {})
-}
-
-// openPath opens a file or folder with the default Windows handler.
-func openPath(path string) {
-	if path == "" {
-		return
-	}
-	_ = exec.Command("cmd", "/c", "start", "", path).Start()
 }

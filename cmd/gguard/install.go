@@ -46,7 +46,11 @@ func serviceExists(name string) bool {
 }
 
 func doInstall(userService bool) {
+	wasInstalled := false
+	wasRunning := false
 	if isUser, installed := detectInstallType(); installed {
+		wasInstalled = true
+		wasRunning, _ = serviceRunningFor()
 		if isUser != userService {
 			label := "system"
 			if isUser {
@@ -189,6 +193,18 @@ func doInstall(userService bool) {
 		log.Printf("warning: %v", err)
 	}
 
+	// Upgrading stops the service first, so put it back the way it was found:
+	// a stopped service would silently stop watching files.
+	if wasInstalled {
+		if wasRunning {
+			if err := serviceControl(s, "start"); err != nil {
+				log.Printf("warning: %v", err)
+			}
+		} else {
+			log.Println("gguard service is stopped. Use 'gguard start' to start it.")
+		}
+	}
+
 	if err := installDesktopEntry(targetDir, !userService); err != nil {
 		log.Printf("warning: cannot install desktop entry: %v", err)
 	}
@@ -207,8 +223,12 @@ func doInstall(userService bool) {
 		log.Printf("warning: cannot update PATH: %v", err)
 	}
 
-	if err := enableTrayAutostart(exeDst); err != nil {
-		log.Printf("warning: cannot enable tray autostart: %v", err)
+	// The tray is a setting: turn it on for a fresh install, but keep whatever
+	// the user chose (gguard tray --on/--off) when upgrading.
+	if !wasInstalled {
+		if err := enableTrayAutostart(exeDst); err != nil {
+			log.Printf("warning: cannot enable tray autostart: %v", err)
+		}
 	}
 
 	fmt.Printf("\ngguard installed to %s\n", targetDir)

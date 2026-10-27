@@ -121,3 +121,7 @@ func uninstallAppsRegistry(_ bool) error                           { return nil 
 // keeps 'tray --on' persistent. Not implemented off Windows (no tray there).
 func enableTrayAutostart(_ string) error { return nil }
 func disableTrayAutostart() error        { return nil }
+
+// trayEnabled reports whether the tray is turned on. There is no tray off
+// Windows, so the setting is always off.
+func trayEnabled() bool { return false }

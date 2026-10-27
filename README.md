@@ -63,7 +63,7 @@ Installs to:
 - **Windows**: `%ProgramFiles%\GopherGuard\gguard.exe`
 - **Linux**: `/usr/local/bin/gguard`
 
-Adds to system PATH, registers as a system service (`gguard`), creates Start Menu shortcut (Windows) / desktop entry (Linux).
+Adds to system PATH, registers as a system service (`gguard`), turns the tray on (`gguard tray --off` to disable), and creates a Start Menu shortcut (Windows) / desktop entry (Linux) that opens the **dashboard**.
 
 #### Per-user (no admin required)
 
@@ -208,14 +208,35 @@ Running `gguard` with no command prints the help. The installer dialog only appe
 | `gguard check <file>` | Validate a `.ggs` script and print the resolved plan (dry run) |
 | `gguard run <file>` | Run a `.ggs` script once, in the foreground |
 | `gguard tray` | Run in the foreground with a system tray icon |
-| `gguard tray --on` / `--off` | Start / stop the tray and persist it across logon |
+| `gguard tray --on` / `--off` | Turn the tray on / off (a persistent setting) |
+| `gguard gui` | Open the web dashboard (+ the tray, if it is turned on) |
 | `gguard logs [-f]` | Show the log file (`--follow` to keep it open) |
+
+The Start Menu shortcut (Windows) and the desktop entry (Linux) open the
+dashboard. The installer dialog only appears when the executable is
+double-clicked **before** GopherGuard is installed.
 
 ### 14. Tray & Notifications
 
 The tray shows the GopherGuard icon with a small status badge in the bottom-right corner, and the menu lists **every registered guard with its own colored dot**, so you can see how each one is doing.
 
-Run it in the foreground with `gguard tray`, or in the background with `gguard tray --on`. The on/off choice is **persistent**: `--on` registers a logon entry so the tray comes back after a reboot, `--off` removes it and stops the tray. Installing enables it by default, and only one tray runs at a time.
+**The tray is a setting, not a command.** `gguard tray --on` turns it on and
+`gguard tray --off` turns it off; that choice is stored (a per-user logon entry
+on Windows) and every entry point respects it:
+
+| When the tray is **on** | When the tray is **off** |
+|-------------------------|--------------------------|
+| It starts at logon | It does not start at logon |
+| `gguard gui` and the Start Menu shortcut show the tray icon | They show only the dashboard |
+| The tray menu can open the dashboard | — |
+
+A fresh install turns the tray **on**; `install`/`upgrade` over an existing
+installation keeps whatever you chose. Only one GopherGuard process runs the
+guards at a time, so a second `gguard gui` just reopens the dashboard that is
+already running.
+
+`gguard tray` (no flags) shows the tray right now in the foreground, without
+touching the setting.
 
 It works even with no scripts installed — in that case it simply shows the **service state**.
 
@@ -226,9 +247,39 @@ It works even with no scripts installed — in that case it simply shows the **s
 | 🔴 Red | The last run failed |
 | 🔵 Blue | A guard is running right now |
 
-Clicking a guard runs that guard; **Run all now** runs every guard. The other entries open the log and the install folder, or quit the tray.
+Clicking a guard runs that guard; **Run all now** runs every guard. The other entries open the dashboard, the log and the install folder, or quit the tray.
 
 When a guard uses the `message` or `notify` verb, GopherGuard also raises a native desktop notification (Windows toast, `notify-send` on Linux, `osascript` on macOS).
+
+### 15. Dashboard (Web GUI)
+
+```bash
+gguard gui
+```
+
+Serves a small dashboard on `http://127.0.0.1:8642` and opens it in your
+browser, running the guards (and the tray icon, when the tray is on) in the
+same process. It has no dependencies and needs no extra runtime — the page is
+embedded in the binary.
+
+| What | Detail |
+|------|--------|
+| **Status** | Overall state dot plus the service state (`running` / `stopped` / `not installed`) |
+| **Guards** | Name, watch path, live state, run count and the last error for each guard |
+| **Run all now** | Triggers every guard immediately |
+| **Run** | Triggers a single guard |
+| **Log** | Tail of the process log |
+| **Quit** | Stops the guards and closes the tray and the dashboard |
+
+The page refreshes itself every 2 seconds. The listener is bound to loopback
+only, and requests from any other host name are rejected — so nothing outside
+your machine can trigger a guard.
+
+The same dashboard is served by the tray, which is why the tray menu has an
+**Open dashboard** entry and why `gguard gui` only reopens the existing page
+when the tray is already running. Started from a launcher (shortcut, logon
+entry) instead of a shell, GopherGuard drops its console window and logs to
+`gguard.log`, so nothing flashes on screen.
 
 ---
 

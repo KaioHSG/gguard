@@ -132,20 +132,33 @@ func (s *guardSession) stopAll() {
 	wg.Wait()
 }
 
-// runForeground runs the guards and, on platforms with a tray, keeps a tray
-// icon alive on the main goroutine until the user quits it.
-func runForeground(ctx context.Context, cancel context.CancelFunc) {
+// foregroundOptions tunes how a foreground run looks. The tray follows the
+// 'tray on/off' setting, so it shows up whenever the user turned it on.
+type foregroundOptions struct {
+	// forceTray shows the tray even when the setting is off, because the user
+	// explicitly asked for it with 'gguard tray'.
+	forceTray bool
+	// dashboard serves the web dashboard even when there is no tray.
+	dashboard bool
+	// openBrowser opens the dashboard in the default browser once it is up.
+	openBrowser bool
+}
+
+// runForeground runs the guards, the tray (when enabled) and the dashboard. It
+// blocks until the guards stop, which happens on Ctrl+C, on the stop file or
+// when the user quits the tray or the page.
+func runForeground(ctx context.Context, cancel context.CancelFunc, opts foregroundOptions) {
 	sess := newGuardSession()
+	useTray := trayAvailable() && (opts.forceTray || trayEnabled())
 
-	if !trayAvailable() {
-		runGuards(ctx, sess)
-		return
+	if useTray {
+		if !acquireTraySingleton() {
+			fatalUserError("another GopherGuard instance is already running (use 'gguard tray --off' to stop it)")
+		}
+		defer releaseTraySingleton()
 	}
 
-	if !acquireTraySingleton() {
-		log.Fatal("another tray is already running (use 'gguard tray --off' to stop it)")
-	}
-	defer releaseTraySingleton()
+	ring := teeLogs()
 
 	done := make(chan struct{})
 	go func() {
@@ -153,17 +166,50 @@ func runForeground(ctx context.Context, cancel context.CancelFunc) {
 		close(done)
 	}()
 
-	// Wait for the initial scan so the tray menu lists every guard.
+	// Wait for the initial scan so the menu and the page list every guard.
 	<-sess.loaded
 
+	var (
+		url     string
+		dashErr error
+	)
+	if opts.dashboard || useTray {
+		u, srv, err := startDashboard(sess, trayStatus(sess), ring, stopEverything(cancel))
+		if err != nil {
+			dashErr = err
+			log.Printf("dashboard: %v", err)
+		} else {
+			url = u
+			defer closeDashboard(srv)
+		}
+	}
+
+	if url != "" && opts.openBrowser {
+		fmt.Printf("GopherGuard dashboard: %s\n", url)
+		openURL(url)
+	}
+	if url == "" && opts.openBrowser {
+		fatalUserError("cannot open the dashboard: %v", dashErr)
+	}
+
+	if !useTray {
+		<-done
+		return
+	}
+
+	// From here on the tray keeps the process alive, so a stray console that
+	// only served for startup can go away.
+	hideOwnConsole()
+
 	runTray(trayOptions{
-		tracker:   sess.tracker,
-		runAll:    sess.runAll,
-		runOne:    sess.runOne,
-		logPath:   filepath.Join(exeDir(), "gguard.log"),
-		configDir: exeDir(),
-		onQuit:    cancel,
-		status:    trayStatus(sess),
+		tracker:      sess.tracker,
+		runAll:       sess.runAll,
+		runOne:       sess.runOne,
+		logPath:      filepath.Join(exeDir(), "gguard.log"),
+		configDir:    exeDir(),
+		onQuit:       cancel,
+		status:       trayStatus(sess),
+		dashboardURL: url,
 	})
 
 	<-done
@@ -228,12 +274,24 @@ func doTrayCommand(on, off bool) {
 	default:
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		runForeground(ctx, cancel)
+		runForeground(ctx, cancel, foregroundOptions{forceTray: true})
 	}
 }
 
+// trayPidPath points at the file recording the running tray/dashboard process.
+// It lives in the user's cache directory because a system-wide install
+// directory (Program Files) is not writable by the user running the tray, and
+// a pid file that cannot be written would defeat the singleton.
 func trayPidPath() string {
-	return filepath.Join(exeDir(), "gguard.tray.pid")
+	dir, err := os.UserCacheDir()
+	if err != nil {
+		return filepath.Join(exeDir(), "gguard.tray.pid")
+	}
+	dir = filepath.Join(dir, "GopherGuard")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return filepath.Join(exeDir(), "gguard.tray.pid")
+	}
+	return filepath.Join(dir, "gguard.tray.pid")
 }
 
 func readTrayPid(path string) (int, bool) {
@@ -297,6 +355,13 @@ func stopBackgroundTray() {
 	pid, ok := readTrayPid(pidPath)
 	if !ok || !processAlive(pid) {
 		os.Remove(pidPath)
+		// No usable pid file: ask a running dashboard to stop itself. This
+		// covers a tray started before the pid file existed or by an older
+		// version.
+		if quitDashboard() {
+			fmt.Println("tray off (stopped through the dashboard)")
+			return
+		}
 		fmt.Println("tray is already off")
 		return
 	}
@@ -352,6 +417,7 @@ Commands:
   restart              Restart the service
   status               Show service status and active guards
   tray [--on|--off]   Tray icon; --on/--off persist across logon (default: on)
+  gui                  Dashboard in your browser (runs the guards)
   logs [-f]            Show the log file (--follow to keep it open)
   list                 List installed guards
   check <file>         Validate a .ggs script and show what it would do
@@ -411,12 +477,19 @@ func main() {
 	if hasCLIFlags() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		runForeground(ctx, cancel)
+		runForeground(ctx, cancel, foregroundOptions{})
 		return
 	}
 
 	if isTerminal() {
 		flag.Usage()
+		return
+	}
+
+	// Launched without a shell (double-click on the binary). An installed
+	// gguard opens the dashboard; a fresh copy shows the installer.
+	if _, installed := detectInstallType(); installed {
+		doGUI()
 		return
 	}
 
@@ -460,6 +533,8 @@ func dispatch(subcmd string, subargs []string) {
 		}
 	case "tray":
 		doTrayCommand(trayOnFlag, trayOffFlag)
+	case "gui":
+		doGUI()
 	case "logs":
 		doLogs(followFlag)
 	case "import":
@@ -509,7 +584,14 @@ func runGuards(ctx context.Context, sess *guardSession) {
 		logFile := filepath.Join(exeDir, "gguard.log")
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err == nil {
-			log.SetOutput(f)
+			// The dashboard keeps reading the log even when the install
+			// directory is not writable (a system install) and the file
+			// cannot be opened.
+			if logTee != nil {
+				log.SetOutput(io.MultiWriter(f, logTee))
+			} else {
+				log.SetOutput(f)
+			}
 		}
 	}
 
@@ -610,7 +692,7 @@ func runGuards(ctx context.Context, sess *guardSession) {
 		switch {
 		case isServiceMode():
 			log.Println("gguard: no scripts found. Add .ggs files and restart the service.")
-		case trayAvailable():
+		case trayAvailable() || guiAttached:
 			log.Println("gguard: no scripts found. Showing service status only.")
 		default:
 			log.Fatal("no scripts found. Create a gg-scripts/ directory or use --scripts.")

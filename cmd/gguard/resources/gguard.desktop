@@ -2,7 +2,7 @@
 Type=Application
 Name=GopherGuard
 Comment=File watcher and backup automator
-Exec={exec}
+Exec={exec} gui
 Icon=gguard
 Categories=Utility;System;
-Terminal=true
+Terminal=false
