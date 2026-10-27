@@ -65,3 +65,9 @@ Example:
 { "backup": { "dest": "D:/joao" },  ← replaced entirely
   "fotos":  { "dest": "D:/fotos" } } ← preserved
 ```
+
+---
+
+- [README](/README.md)
+- [GG Script](/docs/GG-Script.md)
+- [Guards JSON](/docs/Guards-JSON.md)

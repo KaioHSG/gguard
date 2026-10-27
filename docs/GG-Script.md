@@ -76,3 +76,9 @@ To validate a script before installing it: `gguard check backup.ggs` (dry run). 
 | `free_cache` | string | Delay to release OneDrive cache (e.g., `"1h"`, `"30m"`) |
 | `keep_backups` | int | Maximum zips kept (requires `trusted: true`) |
 | `delete_older_than` | string | Deletes zips older than (e.g., `"7d"`, `"24h"`) |
+
+---
+
+- [README](/README.md)
+- [GG Script](/docs/GG-Script.md)
+- [Guards JSON](/docs/Guards-JSON.md)

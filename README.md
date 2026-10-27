@@ -232,5 +232,6 @@ When a guard uses the `message` or `notify` verb, GopherGuard also raises a nati
 
 ---
 
-- [GG Script](GG-Script.md)
-- [Guards JSON](Guards-JSON.md)
+- [README](/README.md)
+- [GG Script](/docs/GG-Script.md)
+- [Guards JSON](/docs/Guards-JSON.md)
