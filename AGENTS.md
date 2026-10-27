@@ -19,34 +19,47 @@ go run build.go --dist
 go vet ./...
 ```
 
-No test suite exists yet. Run `go build .` and `go vet ./...` to verify changes.
+No test suite exists yet. Run `go build ./cmd/gguard` and `go vet ./...` to verify changes.
 
 ## Project Structure
 
 ```
-main.go              — CLI subcommand dispatch (install/start/status/import/...), flag parsing,
+cmd/gguard/          — main package (the CLI binary)
+  main.go            — CLI subcommand dispatch (install/start/status/import/...), flag parsing,
                        runGuards(), config loading, status file, targetMode(), doImport(), doExport()
-main_windows.go      — isServiceManager(), isTerminal(), startElevated(), showInstallDialog(),
+  main_windows.go    — isServiceManager(), isTerminal(), startElevated(), showInstallDialog(),
                        pauseBeforeExit(), activeUserConfigDir() (WTS API), userConfigDir()
-main_other.go        — same as main_windows.go but non-Windows (pkexec/sudo, isServiceManager=false)
-service.go           — program struct (service.Interface), serviceControl(), logging
-install.go           — doInstall(), doUninstall(), doUpgrade(), detectInstallType(), install dir removal
-install_windows.go   — Windows: install dirs, PATH registry, Start Menu shortcuts, admin check, Apps & Features entry
-install_other.go     — Linux/macOS: desktop entry, icon, install dirs (PATH/registry no-op)
+  main_other.go      — same as main_windows.go but non-Windows (pkexec/sudo, isServiceManager=false)
+  service.go         — program struct (service.Interface), serviceControl(), logging
+  install.go         — doInstall(), doUninstall(), doUpgrade(), detectInstallType(), install dir removal
+  install_windows.go — Windows: install dirs, PATH registry, Start Menu shortcuts, admin check, Apps & Features entry
+  install_other.go   — Linux/macOS: desktop entry, icon, install dirs (PATH/registry no-op)
+  icon.go            — tray/app icon rendering (embeds winres/icons/)
+  state.go           — runtime state/status file
+  tray*.go           — system tray UI (Windows/non-Windows, systray)
+  resources.go       — embeds the resources/ directory
+  resources/         — embedded assets (gguard.desktop, gguard.png)
+  winres/            — go-winres config + icons (winres.json, icons/)
+  icon_test.go       — icon rendering tests
 build.go             — cross-platform build script (go run build.go [--dist]); replaces build.ps1/build.sh
-resources.go         — embeds resources/ directory
 engine/              — File watcher engine (watcher, dispatcher, debouncer, engine)
 ggs/                 — .ggs script parser (AST, parser)
+notify/              — platform notifications
+example/             — sample .ggs / guards.json
+img/                 — README images
+docs/                — GG-Script.md, Guards-JSON.md documentation
 ```
+
+`resources/` and `winres/` live inside `cmd/gguard/` because `go:embed` cannot reference paths outside the package directory.
 
 ## Platform-specific Files (Go Build Tags)
 
 | File | Tag |
 |------|-----|
-| `main_windows.go` | `//go:build windows` |
-| `install_windows.go` | `//go:build windows` |
-| `main_other.go` | `//go:build !windows` |
-| `install_other.go` | `//go:build !windows` |
+| `cmd/gguard/main_windows.go` | `//go:build windows` |
+| `cmd/gguard/install_windows.go` | `//go:build windows` |
+| `cmd/gguard/main_other.go` | `//go:build !windows` |
+| `cmd/gguard/install_other.go` | `//go:build !windows` |
 
 ## Key Conventions
 

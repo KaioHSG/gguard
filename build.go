@@ -25,6 +25,11 @@ import (
 
 const ldflags = "-s -w"
 
+// pkgDir is the main package directory, relative to the module root. The
+// resources/ and winres/ assets live next to it because go:embed cannot reach
+// outside the package directory.
+const pkgDir = "cmd/gguard"
+
 type target struct {
 	goos    string
 	goarch  string
@@ -133,7 +138,7 @@ func buildDist(root string, t target) error {
 }
 
 func goBuild(root, goos, goarch, out string) error {
-	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", out, ".")
+	cmd := exec.Command("go", "build", "-ldflags", ldflags, "-o", out, "./"+pkgDir)
 	cmd.Dir = root
 	cmd.Env = envWith(map[string]string{"GOOS": goos, "GOARCH": goarch})
 	cmd.Stdout = os.Stdout
@@ -149,8 +154,10 @@ func runWinres(root, arch string) error {
 	if arch != "" {
 		args = append(args, "--arch", arch)
 	}
+	// go-winres reads winres/winres.json and writes rsrc_windows_*.syso next to
+	// the main package, so it must run from the package directory.
 	cmd := exec.Command("go-winres", args...)
-	cmd.Dir = root
+	cmd.Dir = filepath.Join(root, pkgDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
