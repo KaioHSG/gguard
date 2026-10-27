@@ -23,7 +23,7 @@ import (
 	"github.com/kardianos/service"
 )
 
-var Version = "0.2.1"
+var Version = "0.2.2"
 
 var (
 	quietFlag   bool
