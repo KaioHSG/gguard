@@ -13,13 +13,14 @@ go run build.go --dist
 `build.go` is a `//go:build ignore` helper run with `go run`, replacing the old
 `build.ps1`/`build.sh`. It needs `go-winres` on PATH to stamp Windows resources.
 
-## Lint & Vet
+## Lint & Test
 
 ```bash
 go vet ./...
+go test ./...
 ```
 
-No test suite exists yet. Run `go build ./cmd/gguard` and `go vet ./...` to verify changes.
+Run `go build ./cmd/gguard`, `go vet ./...` and `go test ./...` to verify changes.
 
 ## Project Structure
 
