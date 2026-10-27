@@ -1,9 +1,11 @@
-dist
+/dist
 *.syso
-gguard
-gguard.exe
-gguard.status.json
-gguard.log
+/gguard
+/gguard.exe
+/gguard.status.json
+/gguard.log
 
 /gg-scripts
 /guards.json
+
+!/gguard/
