@@ -33,6 +33,41 @@ message "Backup saved at \"{dest}\""
 | `sync <destination> <source> --delete` | Sync with orphan removal (requires `trusted: true`) |
 | `sync <destination> <source> --bidir` | Bidirectional sync (copies both ways) |
 | `sync <destination> <source> --bidir --delete` | Bidirectional sync with orphan removal |
+| `sync <destination> <source> --exclude <pattern>` | Leaves matching paths behind (repeatable) |
+
+#### Leaving things behind
+
+`--exclude` can be repeated, and a `.ggignore` file at the **root of the source**
+is read as well — one pattern per line, `#` starts a comment:
+
+```nidx
+sync {dest} {watch} --exclude dist --exclude .git --exclude *.exe
+```
+
+```text
+# .ggignore, next to what is being watched
+dist/
+.git/
+*.exe
+!portable.exe      # an exception, since later patterns win
+logs/**/tmp
+```
+
+The syntax is the one people already know from git's ignore files:
+
+| Pattern | Matches |
+|---------|---------|
+| `dist` | a file or directory named `dist`, at any depth |
+| `dist/` | a directory named `dist` (and everything inside it) |
+| `/dist` | only the `dist` at the root of the source |
+| `*.exe` | any name ending in `.exe`, at any depth |
+| `cmd/**/tmp` | `cmd/tmp`, `cmd/a/tmp`, `cmd/a/b/tmp`… |
+| `!keep.exe` | re-includes what an earlier pattern excluded |
+
+A pattern that matches a directory drops the whole tree, so there is no point in
+re-including something whose parent is excluded (the same rule git documents).
+Excluded paths are never copied, and `--delete` never removes them from the
+destination.
 | `message "..."` | Post-execution log line **and** desktop notification |
 | `notify "..."` | Desktop notification only |
 | `run <command>` | Runs a shell command (requires `trusted: true`) |
@@ -56,9 +91,9 @@ Scripts are loaded from different directories depending on the installation mode
 | Installation | Script directory |
 |-------------|------------------|
 | **System** (admin) | `%ProgramFiles%\GopherGuard\gg-scripts\` (Windows) |
-| **System** (admin) | `/usr/local/bin/gg-scripts/` (Linux) |
 | **User** (no admin) | `%APPDATA%\Programs\GopherGuard\gg-scripts\` (Windows) |
-| **User** (no admin) | `~/.local/bin/gg-scripts/` (Linux) |
+| **System** (sudo) | `/usr/local/bin/gg-scripts/` (Linux) |
+| **User** (no sudo) | `~/.local/bin/gg-scripts/` (Linux) |
 
 When the **system service** runs, it also loads scripts from the **active user's** config directory (the person currently logged in at the console). This allows each user to have personal backup scripts without needing admin privileges.
 
