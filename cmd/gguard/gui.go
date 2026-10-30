@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/KaioHSG/gguard/install"
 )
 
 // guiDefaultPort is the dashboard port. When it is taken the OS picks a free
@@ -59,13 +61,6 @@ func doGUI() {
 	}
 
 	guiAttached = true
-
-	// Started from a launcher (shortcut, double-click) there is no console to
-	// print to: drop its window and keep the log in gguard.log instead.
-	if !isTerminal() {
-		quietFlag = true
-		hideOwnConsole()
-	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -179,7 +174,7 @@ func (g *gui) state(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(guiState{
-		Version:    Version,
+		Version:    install.Version,
 		Service:    svc,
 		Overall:    st.String(),
 		Label:      label,

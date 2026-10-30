@@ -9,11 +9,8 @@ import (
 
 var errTrayUnsupported = errors.New("tray process control is not supported on this platform")
 
-// hideOwnConsole is a no-op off Windows: processes do not get a console window
-// of their own there.
-func hideOwnConsole() {}
-
-// fatalUserError reports a fatal error and exits.
+// fatalUserError reports a fatal error and exits. Off Windows the process keeps
+// its console, so the error is always visible.
 func fatalUserError(format string, args ...any) {
 	log.Fatalf(format, args...)
 }

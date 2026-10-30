@@ -8,7 +8,7 @@ on:
         required: true
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
 
 permissions:
   contents: write
@@ -44,8 +44,8 @@ jobs:
           name: "GopherGuard - ${{ steps.version.outputs.tag }}"
           tag_name: ${{ steps.version.outputs.tag }}
           files: |
-            dist/GopherGuard-Linux-ARM.tar.gz
-            dist/GopherGuard-Linux-x64.tar.gz
-            dist/GopherGuard-Windows-ARM.zip
-            dist/GopherGuard-Windows-x64.zip
+            dist/GopherGuard-Linux-ARM
+            dist/GopherGuard-Linux-x64
+            dist/GopherGuard-Windows-ARM.exe
+            dist/GopherGuard-Windows-x64.exe
           generate_release_notes: true

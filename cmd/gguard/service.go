@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/KaioHSG/gguard/install"
 	"github.com/kardianos/service"
 )
 
@@ -31,57 +31,34 @@ func (p *program) Stop(s service.Service) error {
 	return nil
 }
 
+// newService builds the service this process runs. Only the service manager
+// path uses it, so it is bound to the real program.
 func newService(p *program, userService bool) service.Service {
 	exeDir := exeDir()
 
 	var args []string
 	if guardsFlag != "" {
-		args = append(args, "--guards", absPath(guardsFlag, exeDir))
+		args = append(args, "--guards", install.AbsPath(guardsFlag, exeDir))
 	}
 	for _, s := range scriptsFlag {
-		args = append(args, "--scripts", absPath(s, exeDir))
+		args = append(args, "--scripts", install.AbsPath(s, exeDir))
 	}
 
 	name := "gguard"
 	displayName := "GopherGuard"
-
 	if userService {
 		name = "gguard-user"
 		displayName = "GopherGuard (User)"
 	}
 
-	cfg := &serviceConfig{
+	s, err := install.NewFor(p, install.Config{
 		Name:             name,
 		DisplayName:      displayName,
 		Description:      "File watcher and backup automator",
 		Arguments:        args,
 		WorkingDirectory: exeDir,
 		UserService:      userService,
-	}
-
-	return buildService(p, cfg)
-}
-
-func buildService(p *program, cfg *serviceConfig) service.Service {
-	svcCfg := &service.Config{
-		Name:             cfg.Name,
-		DisplayName:      cfg.DisplayName,
-		Description:      cfg.Description,
-		Arguments:        cfg.Arguments,
-		WorkingDirectory: cfg.WorkingDirectory,
-	}
-
-	if cfg.Executable != "" {
-		svcCfg.Executable = cfg.Executable
-	}
-
-	if cfg.UserService {
-		if u, err := user.Current(); err == nil {
-			svcCfg.UserName = u.Username
-		}
-	}
-
-	s, err := service.New(p, svcCfg)
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -89,20 +66,11 @@ func buildService(p *program, cfg *serviceConfig) service.Service {
 }
 
 func serviceControl(s service.Service, action string) error {
-	err := service.Control(s, action)
-	if err != nil {
-		return fmt.Errorf("gguard %s: %w", action, err)
+	if err := install.Control(s, action); err != nil {
+		return err
 	}
 
 	switch action {
-	case "install":
-		log.Println("gguard installed as service. Use 'gguard start' or your OS service manager to start it.")
-	case "uninstall":
-		log.Println("gguard uninstalled.")
-	case "stop":
-		log.Println("gguard service stopped.")
-	case "restart":
-		log.Println("gguard service restarted.")
 	case "start":
 		time.Sleep(2 * time.Second)
 		status, err := s.Status()
@@ -115,8 +83,7 @@ func serviceControl(s service.Service, action string) error {
 		case service.StatusRunning:
 			log.Println("gguard service started.")
 		case service.StatusStopped:
-			exeDir := exeDir()
-			logFile := filepath.Join(exeDir, "gguard.log")
+			logFile := filepath.Join(exeDir(), "gguard.log")
 			fmt.Fprintln(os.Stderr, "gguard service failed to start.")
 			fmt.Fprintf(os.Stderr, "Check gguard.log for details (%s)\n", logFile)
 			if data, err := os.ReadFile(logFile); err == nil {
@@ -135,6 +102,10 @@ func serviceControl(s service.Service, action string) error {
 		default:
 			log.Println("gguard service status unknown.")
 		}
+	case "stop":
+		log.Println("gguard service stopped.")
+	case "restart":
+		log.Println("gguard service restarted.")
 	}
 
 	return nil
@@ -149,17 +120,6 @@ func statusMessage(status service.Status) string {
 	default:
 		return "unknown"
 	}
-}
-
-func absPath(p, exeDir string) string {
-	if filepath.IsAbs(p) {
-		return p
-	}
-	abs, err := filepath.Abs(filepath.Join(exeDir, p))
-	if err != nil {
-		return p
-	}
-	return abs
 }
 
 func isServiceMode() bool {

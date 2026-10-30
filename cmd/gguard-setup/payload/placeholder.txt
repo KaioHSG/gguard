@@ -1,0 +1,6 @@
+This file keeps the payload directory non-empty so the package compiles with a
+plain `go build ./...`.
+
+`build.go` fills this directory with the binaries the installer ships (gguard
+and, on Windows, gguard-cli) before building the installer, and go:embed picks
+them up here.

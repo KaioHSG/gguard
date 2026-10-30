@@ -3,16 +3,11 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"io"
-	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"unsafe"
 
+	"github.com/KaioHSG/gguard/install"
 	"golang.org/x/sys/windows/svc"
 )
 
@@ -24,95 +19,18 @@ func isServiceManager() bool {
 	return isService
 }
 
-// isTerminal reports whether gguard was launched from an existing console (a
-// shell) rather than a double-click that owns its own console window. It uses
-// GetConsoleProcessList: a shared console means a parent shell is attached.
-func isTerminal() bool {
+// consoleAvailable reports whether gguard can talk to the user through a
+// terminal. The binary is built without a console (-H windowsgui), so the only
+// way to get one is to be started from a terminal, directly or through
+// gguard-cli. Everything else — a double-click, the Start Menu shortcut, the
+// logon entry, the service — runs without a console and keeps its output in
+// gguard.log.
+func consoleAvailable() bool {
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
-	getConsoleProcessList := kernel32.NewProc("GetConsoleProcessList")
+	getConsoleWindow := kernel32.NewProc("GetConsoleWindow")
 
-	var pids [64]uint32
-	n, _, _ := getConsoleProcessList.Call(
-		uintptr(unsafe.Pointer(&pids[0])),
-		uintptr(len(pids)),
-	)
-	return n > 1
-}
-
-func startElevated(args []string) bool {
-	exe := filepath.Join(exeDir(), exeName())
-	argStr := strings.Join(args, " ")
-
-	vbs := fmt.Sprintf(
-		"Set UAC = CreateObject(\"Shell.Application\")\nUAC.ShellExecute \"%s\", \"%s\", \"\", \"RunAs\", 1",
-		strings.ReplaceAll(exe, "\"", "\"\""),
-		strings.ReplaceAll(argStr, "\"", "\"\""),
-	)
-
-	tmpFile := filepath.Join(os.Getenv("TEMP"), "gguard_elevate.vbs")
-	os.WriteFile(tmpFile, []byte(vbs), 0644)
-	defer os.Remove(tmpFile)
-
-	return exec.Command("cscript.exe", "//NoLogo", tmpFile).Run() == nil
-}
-
-func showInstallDialog() {
-	_, installed := detectInstallType()
-
-	fmt.Println("=== GopherGuard Installer ===")
-	fmt.Println()
-
-	bufr := bufio.NewReader(os.Stdin)
-
-	if installed {
-		fmt.Println("GopherGuard is already installed.")
-		fmt.Println("[U] Upgrade")
-		fmt.Println("[C] Cancel")
-		fmt.Print("Choice: ")
-
-		lineb, _, errl := bufr.ReadLine()
-		if errl == io.EOF || errl != nil {
-			return
-		}
-		choice := strings.TrimSpace(string(lineb))
-
-		if strings.HasPrefix(strings.ToLower(choice), "u") {
-			doUpgrade()
-		}
-	} else {
-		fmt.Println("GopherGuard is not installed.")
-		fmt.Println("[A] Admin install")
-		fmt.Println("[U] User install")
-		fmt.Println("[C] Cancel")
-		fmt.Print("Choice: ")
-
-		lineb, _, errl := bufr.ReadLine()
-		if errl == io.EOF || errl != nil {
-			return
-		}
-		choice := strings.TrimSpace(string(lineb))
-		lower := strings.ToLower(choice)
-
-		if strings.HasPrefix(lower, "a") {
-			if !isAdmin() {
-				fmt.Println("Requesting administrator privileges...")
-				startElevated([]string{"install"})
-				return
-			}
-			doInstall(false)
-		} else if strings.HasPrefix(lower, "u") {
-			doInstall(true)
-		}
-	}
-
-	pauseBeforeExit()
-}
-
-func pauseBeforeExit() {
-	fmt.Println()
-	fmt.Print("Press Enter to close...")
-	bufr := bufio.NewReader(os.Stdin)
-	bufr.ReadLine()
+	hwnd, _, _ := getConsoleWindow.Call()
+	return hwnd != 0
 }
 
 func activeUserConfigDir() string {
@@ -153,5 +71,5 @@ func activeUserConfigDir() string {
 }
 
 func userConfigDir() string {
-	return installTargetDir(true)
+	return install.TargetDir(true)
 }

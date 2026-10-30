@@ -37,8 +37,7 @@ var (
 	procQueryServiceStat = advapi32.NewProc("QueryServiceStatus")
 	procCloseServiceHnd  = advapi32.NewProc("CloseServiceHandle")
 
-	kernel32        = syscall.NewLazyDLL("kernel32.dll")
-	procFreeConsole = kernel32.NewProc("FreeConsole")
+	user32          = syscall.NewLazyDLL("user32.dll")
 	procMessageBoxW = user32.NewProc("MessageBoxW")
 )
 
@@ -47,30 +46,14 @@ const (
 	mbIconError = 0x00000010
 )
 
-// consoleHidden records that this process gave up its console, so fatal errors
-// are reported with a message box instead of vanishing with the window.
-var consoleHidden bool
-
-// hideOwnConsole closes the console window Windows opened for this process.
-// It runs when gguard is started without a shell — a double-click, the Start
-// Menu shortcut or the logon entry — so the tray and the dashboard appear
-// without a stray black window. A console shared with a parent shell is left
-// alone, keeping normal command line usage intact.
-func hideOwnConsole() {
-	if consoleHidden || isTerminal() {
-		return
-	}
-	consoleHidden = true
-	procFreeConsole.Call()
-}
-
-// fatalUserError reports a fatal error and exits. With no console left it
-// falls back to a message box, so a double-clicked gguard never fails
-// silently.
+// fatalUserError reports a fatal error and exits. gguard runs without a
+// console most of the time (double-click, Start Menu shortcut, logon entry), so
+// a failure is shown in a message box instead of vanishing.
 func fatalUserError(format string, args ...any) {
 	msg := fmt.Sprintf("gguard: "+format, args...)
 	log.Print(msg)
-	if !consoleHidden {
+
+	if consoleAvailable() {
 		os.Exit(1)
 	}
 

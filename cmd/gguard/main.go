@@ -19,11 +19,10 @@ import (
 	"time"
 
 	"github.com/KaioHSG/gguard/engine"
+	"github.com/KaioHSG/gguard/install"
 	"github.com/KaioHSG/gguard/ggs"
 	"github.com/kardianos/service"
 )
-
-var Version = "0.2.2"
 
 var (
 	quietFlag   bool
@@ -149,7 +148,7 @@ type foregroundOptions struct {
 // when the user quits the tray or the page.
 func runForeground(ctx context.Context, cancel context.CancelFunc, opts foregroundOptions) {
 	sess := newGuardSession()
-	useTray := trayAvailable() && (opts.forceTray || trayEnabled())
+	useTray := trayAvailable() && (opts.forceTray || install.TrayEnabled())
 
 	if useTray {
 		if !acquireTraySingleton() {
@@ -196,10 +195,6 @@ func runForeground(ctx context.Context, cancel context.CancelFunc, opts foregrou
 		<-done
 		return
 	}
-
-	// From here on the tray keeps the process alive, so a stray console that
-	// only served for startup can go away.
-	hideOwnConsole()
 
 	runTray(trayOptions{
 		tracker:      sess.tracker,
@@ -258,7 +253,7 @@ func doTrayCommand(on, off bool) {
 
 	switch {
 	case off:
-		if err := disableTrayAutostart(); err != nil {
+		if err := install.DisableTrayAutostart(); err != nil {
 			log.Printf("warning: cannot disable tray autostart: %v", err)
 		}
 		stopBackgroundTray()
@@ -267,7 +262,8 @@ func doTrayCommand(on, off bool) {
 		if err != nil {
 			log.Fatalf("cannot locate gguard: %v", err)
 		}
-		if err := enableTrayAutostart(exe); err != nil {
+		// The windowless launcher keeps the logon entry from flashing a console.
+		if err := install.EnableTrayAutostart(install.LauncherPath(exe)); err != nil {
 			log.Printf("warning: cannot enable tray autostart: %v", err)
 		}
 		startBackgroundTray()
@@ -408,10 +404,11 @@ Usage:
   gguard <command> [flags]
   gguard                       Show this help
 
+Installing and upgrading are handled by gguard-setup; uninstalling lives here,
+because the app is what the install directory and Apps & Features point at.
+
 Commands:
-  install [--user]     Install as system service (--user for per-user)
-  uninstall [--user]   Uninstall the service
-  upgrade              Reinstall keeping the same install type
+  uninstall [--user]   Remove GopherGuard and its service
   start                Start the service
   stop                 Stop the service
   restart              Restart the service
@@ -428,8 +425,7 @@ Commands:
   help                 Show this help
 
 Examples:
-  gguard install
-  gguard install --user
+  gguard status
   gguard import my-script.ggs
   gguard -s my-script.ggs -g guards.json -q
 
@@ -481,33 +477,36 @@ func main() {
 		return
 	}
 
-	if isTerminal() {
-		flag.Usage()
-		return
-	}
-
-	// Launched without a shell (double-click on the binary). An installed
-	// gguard opens the dashboard; a fresh copy shows the installer.
-	if _, installed := detectInstallType(); installed {
+	// With no console there is nowhere to print usage, which means gguard was
+	// started by a launcher (double-click, shortcut, logon entry): open the
+	// dashboard instead.
+	if !consoleAvailable() {
 		doGUI()
 		return
 	}
 
-	showInstallDialog()
+	flag.Usage()
 }
 
 func dispatch(subcmd string, subargs []string) {
 	switch subcmd {
-	case "install":
-		doInstall(userFlag)
+	case "install", "upgrade":
+		fatalUserError("%s is handled by the installer. Run 'gguard-setup %s'.", subcmd, subcmd)
 	case "uninstall":
-		doUninstall(userFlag)
-	case "upgrade":
-		doUpgrade()
+		userService, installed := resolveService()
+		if !installed {
+			fmt.Println("GopherGuard is not installed")
+			return
+		}
+		if err := install.Uninstall(userService); err != nil {
+			elevationHint(userService)
+			log.Fatal(err)
+		}
+		fmt.Printf("GopherGuard uninstalled from %s\n", install.TargetDir(userService))
 	case "start", "stop", "restart":
 		userService, installed := resolveService()
 		if !installed {
-			log.Fatal("gguard is not installed. Run 'gguard install' first.")
+			log.Fatal("gguard is not installed. Run the installer (gguard-setup) first.")
 		}
 
 		prg := &program{}
@@ -557,7 +556,7 @@ func dispatch(subcmd string, subargs []string) {
 	case "export":
 		doExport(targetMode(userFlag))
 	case "version":
-		fmt.Printf("gguard v%s\n", Version)
+		fmt.Printf("gguard v%s\n", install.Version)
 	case "help":
 		flag.Usage()
 	default:
@@ -580,7 +579,9 @@ func runGuards(ctx context.Context, sess *guardSession) {
 		writeStatus(statusPath, tracker.Entries())
 	})
 
-	if !isServiceMode() && quietFlag {
+	// Quiet mode, or no console at all (started by the launcher, the logon
+	// entry, the shortcut): either way the log belongs in gguard.log.
+	if !isServiceMode() && (quietFlag || !consoleAvailable()) {
 		logFile := filepath.Join(exeDir, "gguard.log")
 		f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err == nil {
@@ -904,7 +905,7 @@ func targetMode(userFlag bool) string {
 	if userFlag {
 		return "user"
 	}
-	if isAdmin() {
+	if install.IsAdmin() {
 		return "system"
 	}
 	return "user"
@@ -919,16 +920,27 @@ func resolveService() (userService bool, installed bool) {
 		if userFlag {
 			name = "gguard-user"
 		}
-		return userFlag, serviceExists(name)
+		return userFlag, install.ServiceExists(name)
 	}
-	return detectInstallType()
+	return install.DetectType()
+}
+
+// userFlagExplicit reports whether --user was typed, which makes the mode an
+// explicit choice instead of something to detect.
+func userFlagExplicit() bool {
+	for _, arg := range os.Args {
+		if arg == "--user" || arg == "-user" {
+			return true
+		}
+	}
+	return false
 }
 
 // elevationHint explains how to run a system-wide (global) service command with
 // the privileges it needs. It stays quiet for user installs or when already
 // elevated.
 func elevationHint(userService bool) {
-	if userService || isAdmin() {
+	if userService || install.IsAdmin() {
 		return
 	}
 	if runtimeOS() == "windows" {
@@ -940,7 +952,7 @@ func elevationHint(userService bool) {
 
 func configDir(mode string) string {
 	if mode == "system" {
-		return installTargetDir(false)
+		return install.TargetDir(false)
 	}
 	return userConfigDir()
 }
@@ -969,7 +981,7 @@ func doImport(src, mode string) {
 			log.Fatalf("cannot create scripts directory: %v", err)
 		}
 		dst := filepath.Join(scriptsDir, base)
-		if err := copyFile(src, dst); err != nil {
+		if err := install.CopyFile(src, dst); err != nil {
 			log.Fatalf("cannot import script: %v", err)
 		}
 		fmt.Printf("imported %s -> %s\n", base, dst)

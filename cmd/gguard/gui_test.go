@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/KaioHSG/gguard/install"
 )
 
 func TestLogRingAccumulatesPartialLines(t *testing.T) {
@@ -104,8 +106,8 @@ func TestGUIStateReportsGuards(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &state); err != nil {
 		t.Fatalf("invalid JSON: %v", err)
 	}
-	if state.Version != Version {
-		t.Errorf("version = %q, want %q", state.Version, Version)
+	if state.Version != install.Version {
+		t.Errorf("version = %q, want %q", state.Version, install.Version)
 	}
 	if state.Overall != "ok" || state.Label != "ok" {
 		t.Errorf("overall/label = %q/%q, want \"ok\"/\"ok\"", state.Overall, state.Label)

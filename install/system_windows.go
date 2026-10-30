@@ -1,6 +1,6 @@
 //go:build windows
 
-package main
+package install
 
 import (
 	"fmt"
@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"unsafe"
 
-	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -32,37 +31,8 @@ func sendMessageTimeout(hWnd uintptr, msg uint32, wParam, lParam uintptr, flags 
 	return ret
 }
 
-func installTargetDir(userService bool) string {
-	if userService {
-		localAppData, _ := os.UserConfigDir()
-		return filepath.Join(localAppData, "Programs", "GopherGuard")
-	}
-	return filepath.Join(os.Getenv("ProgramFiles"), "GopherGuard")
-}
-
-func exeName() string {
-	return "gguard.exe"
-}
-
-func isAdmin() bool {
-	var sid *windows.SID
-	err := windows.AllocateAndInitializeSid(
-		&windows.SECURITY_NT_AUTHORITY, 2,
-		windows.SECURITY_BUILTIN_DOMAIN_RID,
-		windows.DOMAIN_ALIAS_RID_ADMINS,
-		0, 0, 0, 0, 0, 0, &sid,
-	)
-	if err != nil {
-		return false
-	}
-	defer windows.FreeSid(sid)
-
-	token := windows.Token(0)
-	isMember, _ := token.IsMember(sid)
-	return isMember
-}
-
-func addToPath(targetDir string, system bool) error {
+// AddToPath puts the install directory in the user or system PATH, once.
+func AddToPath(targetDir string, system bool) error {
 	var keyPath string
 	var rootKey registry.Key
 	access := uint32(registry.QUERY_VALUE | registry.SET_VALUE)
@@ -92,7 +62,7 @@ func addToPath(targetDir string, system bool) error {
 
 	for _, entry := range filepath.SplitList(existing) {
 		if winPathEqual(entry, targetAbs) {
-			log.Printf("%s is already in %s PATH", targetDir, label)
+			log.Printf("%s is already in the %s PATH", targetDir, label)
 			return nil
 		}
 	}
@@ -113,7 +83,7 @@ func addToPath(targetDir string, system bool) error {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "gguard: added %s to %s PATH\n", targetDir, label)
+	log.Printf("added %s to the %s PATH", targetDir, label)
 	broadcastEnvChange()
 	return nil
 }
@@ -136,7 +106,8 @@ func broadcastEnvChange() {
 	)
 }
 
-func removeFromPath(targetDir string, system bool) error {
+// RemoveFromPath takes the install directory back out of the PATH.
+func RemoveFromPath(targetDir string, system bool) error {
 	label := "user"
 	rootKey := registry.CURRENT_USER
 	keyPath := `Environment`
@@ -178,7 +149,7 @@ func removeFromPath(targetDir string, system bool) error {
 		}
 	}
 
-	fmt.Fprintf(os.Stderr, "gguard: removed %s from %s PATH\n", targetDir, label)
+	log.Printf("removed %s from the %s PATH", targetDir, label)
 	broadcastEnvChange()
 	return nil
 }
@@ -195,40 +166,48 @@ func startMenuDir(system bool) string {
 	return filepath.Join(os.Getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "GopherGuard")
 }
 
-func installStartMenuShortcut(targetDir string, system bool) error {
+// InstallStartMenuShortcut creates the Start Menu entry that opens the
+// dashboard. It points at the windowless launcher, so nothing flashes.
+func InstallStartMenuShortcut(targetDir string, system bool) error {
 	dir := startMenuDir(system)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("cannot create start menu directory: %w", err)
+		return fmt.Errorf("cannot create the Start Menu directory: %w", err)
 	}
 
-	exePath := filepath.Join(targetDir, exeName())
+	exePath := LauncherPath(filepath.Join(targetDir, ExeName()))
 	shortcutPath := filepath.Join(dir, "GopherGuard.lnk")
 
-	// The shortcut opens the dashboard, which also brings up the tray when the
-	// tray setting is on.
 	if err := createShellLink(exePath, shortcutPath, "gui", "File watcher and backup automator"); err != nil {
 		return err
 	}
 
-	log.Printf("installed start menu shortcut: %s", shortcutPath)
+	log.Printf("installed Start Menu shortcut: %s", shortcutPath)
 	return nil
 }
 
-func uninstallStartMenuShortcut(system bool) error {
+// RemoveStartMenuShortcut deletes the Start Menu entry.
+func RemoveStartMenuShortcut(system bool) error {
 	dir := startMenuDir(system)
 	shortcutPath := filepath.Join(dir, "GopherGuard.lnk")
 	if err := os.Remove(shortcutPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	os.Remove(dir)
-	log.Printf("removed start menu shortcut: %s", shortcutPath)
+	log.Printf("removed Start Menu shortcut: %s", shortcutPath)
 	return nil
 }
 
-func installDesktopEntry(_ string, _ bool) error { return nil }
-func uninstallDesktopEntry(_ bool) error         { return nil }
-func installIcon(_ bool) error                   { return nil }
-func uninstallIcon(_ bool) error                 { return nil }
+// InstallDesktopEntry is a no-op on Windows, which uses shortcuts instead.
+func InstallDesktopEntry(_ string, _ bool) error { return nil }
+
+// RemoveDesktopEntry is a no-op on Windows.
+func RemoveDesktopEntry(_ bool) error { return nil }
+
+// InstallIcon is a no-op on Windows: the icon is baked into the executable.
+func InstallIcon(_ bool) error { return nil }
+
+// RemoveIcon is a no-op on Windows.
+func RemoveIcon(_ bool) error { return nil }
 
 func createShellLink(targetPath, shortcutPath, args, description string) error {
 	cmd := fmt.Sprintf(
@@ -238,7 +217,9 @@ func createShellLink(targetPath, shortcutPath, args, description string) error {
 	return exec.Command("powershell", "-NoProfile", "-Command", cmd).Run()
 }
 
-func installAppsRegistry(targetDir string, system bool) error {
+// InstallAppsRegistry registers GopherGuard in Apps & Features. Uninstalling
+// runs the app itself, which is always present in the install directory.
+func InstallAppsRegistry(targetDir string, system bool) error {
 	rootKey := registry.CURRENT_USER
 	keyPath := `Software\Microsoft\Windows\CurrentVersion\Uninstall\GopherGuard`
 	if system {
@@ -249,17 +230,16 @@ func installAppsRegistry(targetDir string, system bool) error {
 	access := uint32(registry.QUERY_VALUE | registry.SET_VALUE)
 	key, _, err := registry.CreateKey(rootKey, keyPath, access)
 	if err != nil {
-		return fmt.Errorf("cannot create uninstall registry key: %w", err)
+		return fmt.Errorf("cannot create the uninstall registry key: %w", err)
 	}
 	defer key.Close()
 
-	exePath := filepath.Join(targetDir, exeName())
-	uninstallStr := fmt.Sprintf(`"%s" uninstall`, exePath)
+	exePath := filepath.Join(targetDir, ExeName())
 
 	_ = key.SetStringValue("DisplayName", "GopherGuard")
 	_ = key.SetStringValue("DisplayVersion", Version)
 	_ = key.SetStringValue("Publisher", "KaioHSG")
-	_ = key.SetStringValue("UninstallString", uninstallStr)
+	_ = key.SetStringValue("UninstallString", fmt.Sprintf(`"%s" uninstall`, exePath))
 	_ = key.SetStringValue("InstallLocation", targetDir)
 	_ = key.SetStringValue("DisplayIcon", exePath)
 	_ = key.SetStringValue("HelpLink", "https://github.com/KaioHSG/gguard")
@@ -269,7 +249,8 @@ func installAppsRegistry(targetDir string, system bool) error {
 	return nil
 }
 
-func uninstallAppsRegistry(system bool) error {
+// RemoveAppsRegistry drops the Apps & Features entry.
+func RemoveAppsRegistry(system bool) error {
 	rootKey := registry.CURRENT_USER
 	keyPath := `Software\Microsoft\Windows\CurrentVersion\Uninstall\GopherGuard`
 	if system {
@@ -278,55 +259,24 @@ func uninstallAppsRegistry(system bool) error {
 	}
 
 	if err := registry.DeleteKey(rootKey, keyPath); err != nil && err != registry.ErrNotExist {
-		return fmt.Errorf("cannot remove uninstall registry key: %w", err)
+		return fmt.Errorf("cannot remove the uninstall registry key: %w", err)
 	}
 
-	log.Println("removed Apps & Features entry")
+	log.Println("removed the Apps & Features entry")
 	return nil
 }
 
-const (
-	trayRunKey   = `Software\Microsoft\Windows\CurrentVersion\Run`
-	trayRunValue = "GopherGuardTray"
-)
+// scheduleRemoveOnReboot asks Windows to delete a leftover path on the next
+// boot, which is the only way to remove the executable that is running.
+func scheduleRemoveOnReboot(path string) {
+	const moveFileDelayUntilReboot = 0x4
 
-// enableTrayAutostart registers gguard to start the tray when the user logs in,
-// which is what makes 'tray --on' persist across reboots.
-func enableTrayAutostart(exePath string) error {
-	key, _, err := registry.CreateKey(registry.CURRENT_USER, trayRunKey, registry.SET_VALUE)
+	kernel32 := syscall.NewLazyDLL("kernel32.dll")
+	procMoveFileEx := kernel32.NewProc("MoveFileExW")
+
+	p, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
-		return fmt.Errorf("cannot open Run key: %w", err)
+		return
 	}
-	defer key.Close()
-
-	cmd := `"` + exePath + `" tray -q`
-	return key.SetStringValue(trayRunValue, cmd)
-}
-
-// trayEnabled reports whether the tray is turned on. It is the "tray on/off"
-// setting, so every entry point (logon, Start Menu shortcut, 'gui') agrees on
-// whether a tray icon should show.
-func trayEnabled() bool {
-	key, err := registry.OpenKey(registry.CURRENT_USER, trayRunKey, registry.QUERY_VALUE)
-	if err != nil {
-		return false
-	}
-	defer key.Close()
-
-	_, _, err = key.GetStringValue(trayRunValue)
-	return err == nil
-}
-
-// disableTrayAutostart removes the logon entry.
-func disableTrayAutostart() error {
-	key, err := registry.OpenKey(registry.CURRENT_USER, trayRunKey, registry.SET_VALUE)
-	if err != nil {
-		return nil
-	}
-	defer key.Close()
-
-	if err := key.DeleteValue(trayRunValue); err != nil && err != registry.ErrNotExist {
-		return err
-	}
-	return nil
+	procMoveFileEx.Call(uintptr(unsafe.Pointer(p)), 0, moveFileDelayUntilReboot)
 }

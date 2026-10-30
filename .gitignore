@@ -2,8 +2,17 @@
 *.syso
 /gguard
 /gguard.exe
+/gguard-launcher
+/gguard-launcher.exe
+/gguard-setup
+/gguard-setup.exe
 /gguard.status.json
 /gguard.log
+
+# The installer payload is a build artifact: build.go fills it with the
+# binaries above and go:embed bakes them into gguard-setup.
+/cmd/gguard-setup/payload/*
+!/cmd/gguard-setup/payload/placeholder.txt
 
 /gg-scripts
 /guards.json
