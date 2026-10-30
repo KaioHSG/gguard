@@ -260,7 +260,11 @@ Import merge behavior for `guards.json`:
 | `autostart` | Starts automatically when the service is running |
 | `free_cache` | Releases OneDrive cache after (e.g., `"1h"`) |
 | `keep_backups` | Max zips kept (requires `trusted`) |
-| `delete_older_than` | Removes zips older than (e.g., `"7d"`) |
+| `delete_older_than` | Removes zips older than the period (e.g. `"30h"`, `"720h"`) |
+
+Both period fields use Go's duration syntax (`30m`, `12h`, `720h`): there is no
+day unit, so `"30d"` is not "30 days", it is ignored — and with no value nothing
+is ever cleaned up.
 
 ### 12. Logging
 

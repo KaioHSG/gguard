@@ -25,7 +25,7 @@ When the **system service** runs, it loads **both** the global config and the ac
     "autostart": true,
     "free_cache": "1h",
     "keep_backups": 5,
-    "delete_older_than": "30d"
+    "delete_older_than": "720h"
   }
 }
 ```
@@ -39,7 +39,7 @@ When the **system service** runs, it loads **both** the global config and the ac
 | `autostart` | bool | Automatically starts when the service is running |
 | `free_cache` | string | Delay to release local OneDrive cache (e.g., `"1h"`, `"30m"`) |
 | `keep_backups` | int | Maximum `.zip` files kept in the destination (requires `trusted: true`) |
-| `delete_older_than` | string | Removes zips older than the period (e.g., `"7d"`, `"24h"`) |
+| `delete_older_than` | string | Removes zips older than the period (e.g. `"30h"`, `"720h"`; Go durations, so there is no day unit) |
 
 - `${HOME}` is resolved to the current user's home directory at load time.
 - `os.ExpandEnv` is applied, so `%APPDATA%`, `$HOME`, etc. work.

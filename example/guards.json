@@ -3,6 +3,6 @@
     "dest": "${HOME}/OneDrive/Backups",
     "trusted": true,
     "keep_backups": 5,
-    "delete_older_than": "30d"
+    "delete_older_than": "30h"
   }
 }

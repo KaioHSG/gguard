@@ -4,7 +4,7 @@ guard "My Backup"
 version 1.0
 os windows
 
-watch "{home}/Documents/Projetos"
+watch "{home}/Documents/Projects"
 debounce 5s
-zip {dest}/projetos-{timestamp}.zip {watch}
+zip {dest}/projects-{timestamp}.zip {watch}
 message "Backup saved at \"{dest}\""
