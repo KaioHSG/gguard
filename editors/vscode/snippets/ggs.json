@@ -1,0 +1,99 @@
+{
+  "Guard": {
+    "prefix": "guard",
+    "body": [
+      "guard \"${1:My Backup}\"",
+      "version ${2:1.0}",
+      "os ${3:windows}",
+      "",
+      "watch \"${4:{home}/Documents/Projetos}\"",
+      "debounce ${5:5s}",
+      "${6|zip,sync,message|} ${7:{dest}}/${8:backup}-{timestamp}.zip {watch}"
+    ],
+    "description": "A whole routine, with the required guard/watch verbs"
+  },
+  "Guard name": {
+    "prefix": "guardname",
+    "body": [
+      "guard \"${1:My Backup}\""
+    ],
+    "description": "Name the routine"
+  },
+  "Version": {
+    "prefix": "version",
+    "body": [
+      "version ${1:1.0}"
+    ],
+    "description": "Routine version (only 1.x is accepted)"
+  },
+  "OS": {
+    "prefix": "os",
+    "body": [
+      "os ${1|windows,linux,darwin|}"
+    ],
+    "description": "Restrict the routine to an operating system"
+  },
+  "Watch": {
+    "prefix": "watch",
+    "body": [
+      "watch \"${1:{home}/Documents/Projetos}\""
+    ],
+    "description": "Directory to monitor"
+  },
+  "Debounce": {
+    "prefix": "debounce",
+    "body": [
+      "debounce ${1:5s}"
+    ],
+    "description": "Silence after the last change before running"
+  },
+  "Zip": {
+    "prefix": "zip",
+    "body": [
+      "zip ${1:{dest}}/${2:backup}-{timestamp}.zip {watch}"
+    ],
+    "description": "Compress the watched directory"
+  },
+  "Sync": {
+    "prefix": "sync",
+    "body": [
+      "sync ${1:{dest}} {watch}${2: --exclude dist --exclude .git}"
+    ],
+    "description": "Incremental sync, optionally leaving things behind"
+  },
+  "Message": {
+    "prefix": "message",
+    "body": [
+      "message \"${1:Backup saved at {dest}}\""
+    ],
+    "description": "Log line and desktop notification"
+  },
+  "Notify": {
+    "prefix": "notify",
+    "body": [
+      "notify \"${1:Backup saved}\""
+    ],
+    "description": "Desktop notification only"
+  },
+  "Run": {
+    "prefix": "run",
+    "body": [
+      "run ${1:command --with-args}"
+    ],
+    "description": "Run a shell command (needs trusted: true)"
+  },
+  "Delete": {
+    "prefix": "delete",
+    "body": [
+      "delete ${1:{dest}/old}"
+    ],
+    "description": "Remove files or directories (needs trusted: true)"
+  },
+  "Webhook": {
+    "prefix": "webhook",
+    "body": [
+      "webhook ${1:https://example.com/hook} ${2:{\"text\":\"backup done\"}}"
+    ],
+    "description": "POST a body to a URL"
+  }
+}

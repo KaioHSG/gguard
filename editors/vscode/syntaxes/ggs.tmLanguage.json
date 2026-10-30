@@ -1,0 +1,85 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GG Script",
+  "scopeName": "source.ggs",
+  "fileTypes": [
+    ".ggs"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#guard"
+    },
+    {
+      "include": "#verbs"
+    },
+    {
+      "include": "#flags"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#operating-system"
+    },
+    {
+      "include": "#variables"
+    },
+    {
+      "include": "#numbers"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "match": "#.*$",
+      "name": "comment.line.number-sign.ggs"
+    },
+    "guard": {
+      "match": "\\b(guard)\\s+(\"(?:[^\"\\\\]|\\\\.)*\")",
+      "captures": {
+        "1": {
+          "name": "keyword.control.ggs"
+        },
+        "2": {
+          "name": "entity.name.type.guard.ggs"
+        }
+      }
+    },
+    "verbs": {
+      "match": "\\b(guard|version|os|watch|debounce|zip|sync|message|notify|run|delete|webhook)\\b",
+      "name": "keyword.control.ggs"
+    },
+    "flags": {
+      "match": "(?<![\\w-])--(delete|bidir|exclude)\\b",
+      "name": "keyword.other.flag.ggs"
+    },
+    "strings": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.ggs",
+      "patterns": [
+        {
+          "include": "#variables"
+        },
+        {
+          "match": "\\\\.",
+          "name": "constant.character.escape.ggs"
+        }
+      ]
+    },
+    "operating-system": {
+      "match": "\\b(windows|linux|darwin)\\b",
+      "name": "constant.language.os.ggs"
+    },
+    "variables": {
+      "match": "\\{[A-Za-z_][A-Za-z0-9_]*\\}",
+      "name": "variable.other.ggs"
+    },
+    "numbers": {
+      "match": "\\b\\d+(\\.\\d+)?(ms|s|m|h|d)?\\b",
+      "name": "constant.numeric.ggs"
+    }
+  }
+}

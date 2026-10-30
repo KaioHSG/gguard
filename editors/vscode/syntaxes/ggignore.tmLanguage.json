@@ -1,0 +1,54 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "GG Ignore",
+  "scopeName": "source.ggignore",
+  "fileTypes": [
+    ".ggignore"
+  ],
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#negation"
+    },
+    {
+      "include": "#globs"
+    },
+    {
+      "include": "#anchors"
+    },
+    {
+      "include": "#separators"
+    },
+    {
+      "include": "#path"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "match": "^\\s*#.*$",
+      "name": "comment.line.number-sign.ggignore"
+    },
+    "negation": {
+      "match": "^\\s*!",
+      "name": "keyword.operator.negation.ggignore"
+    },
+    "globs": {
+      "match": "\\*\\*|\\*|\\?",
+      "name": "keyword.operator.glob.ggignore"
+    },
+    "anchors": {
+      "match": "^/|/$",
+      "name": "punctuation.definition.anchor.ggignore"
+    },
+    "separators": {
+      "match": "/",
+      "name": "punctuation.separator.ggignore"
+    },
+    "path": {
+      "match": "[^/*?!\\s]+",
+      "name": "string.unquoted.path.ggignore"
+    }
+  }
+}

@@ -89,6 +89,7 @@ build.go             — cross-platform build script (go run build.go [--dist]);
 engine/              — File watcher engine (watcher, dispatcher, debouncer, engine)
 ggs/                 — .ggs script parser (AST, parser)
 notify/              — platform notifications
+editors/vscode/      — VS Code extension: TextMate grammars for .ggs and .ggignore (kept in the repo, not published)
 example/             — sample .ggs / guards.json
 img/                 — README images
 docs/                — GG-Script.md, Guards-JSON.md documentation

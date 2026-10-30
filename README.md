@@ -430,3 +430,4 @@ screen.
 - [README](/README.md)
 - [GG Script](/docs/GG-Script.md)
 - [Guards JSON](/docs/Guards-JSON.md)
+- [VS Code syntax highlighting](/editors/vscode/README.md)
