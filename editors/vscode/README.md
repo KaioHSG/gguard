@@ -38,7 +38,7 @@ copy above is invisible there; install the `.vsix` with `--profile`:
 
 ```bash
 code --profile "Go" --install-extension gguard-0.1.0.vsix
-code --profile "Go" --list-extensions | Select-String gguard   # kaioshg.gguard
+code --profile "Go" --list-extensions | Select-String gguard   # kaiohsg.gguard
 ```
 
 [profiles]: https://code.visualstudio.com/docs/configure/profiles
@@ -63,7 +63,7 @@ this repository, the routines' own `sync --exclude` rules are documented in
 ## Publishing (not done yet)
 
 The extension is kept in the repository without being distributed. The
-`publisher` in `package.json` (`kaioshg`) is there so VS Code accepts the
+`publisher` in `package.json` (`kaiohsg`) is there so VS Code accepts the
 manifest; publishing for real also needs that publisher registered on the
 Marketplace (`vsce login`, `vsce publish`), and ideally a `license` and an
 icon.
