@@ -53,28 +53,33 @@ func TestDebouncerResetsOnNewEvent(t *testing.T) {
 	}
 }
 
-func TestDebouncerMultipleKeys(t *testing.T) {
+// A burst of changes is one fire, carrying the most recent path: running the
+// guard once per changed file would mean a build triggers as many runs as the
+// files it touched.
+func TestDebouncerCoalescesABurst(t *testing.T) {
 	fires := make(chan string, 10)
-	d := NewDebouncer(50 * time.Millisecond)
+	d := NewDebouncer(100 * time.Millisecond)
 	d.OnFire(func(key string) {
 		fires <- key
 	})
 
 	d.Trigger("pathA")
 	d.Trigger("pathB")
+	d.Trigger("pathC")
 
-	received := make(map[string]bool)
-	for i := 0; i < 2; i++ {
-		select {
-		case key := <-fires:
-			received[key] = true
-		case <-time.After(2 * time.Second):
-			t.Fatal("timed out")
+	select {
+	case key := <-fires:
+		if key != "pathC" {
+			t.Errorf("expected the most recent path 'pathC', got %q", key)
 		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("debouncer did not fire")
 	}
 
-	if !received["pathA"] || !received["pathB"] {
-		t.Errorf("not all keys received: %+v", received)
+	select {
+	case key := <-fires:
+		t.Errorf("a burst must fire once, got a second fire for %q", key)
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

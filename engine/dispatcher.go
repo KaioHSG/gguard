@@ -232,16 +232,30 @@ func (d *Dispatcher) execWebhook(args []string) error {
 	return nil
 }
 
+// ignoreFileName is read from the root of the source when it exists, so a
+// routine can keep its exclusions next to what it backups.
+const ignoreFileName = ".ggignore"
+
 func (d *Dispatcher) execSync(args []string) error {
 	deleteOrphans := false
 	bidirectional := false
+	var excludes []string
 	var cleanArgs []string
-	for _, a := range args {
-		switch a {
-		case "--delete":
+
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--delete":
 			deleteOrphans = true
-		case "--bidir":
+		case a == "--bidir":
 			bidirectional = true
+		case a == "--exclude":
+			if i+1 >= len(args) {
+				return fmt.Errorf("--exclude requires a pattern")
+			}
+			i++
+			excludes = append(excludes, args[i])
+		case strings.HasPrefix(a, "--exclude="):
+			excludes = append(excludes, strings.TrimPrefix(a, "--exclude="))
 		default:
 			cleanArgs = append(cleanArgs, a)
 		}
@@ -257,27 +271,38 @@ func (d *Dispatcher) execSync(args []string) error {
 	dest := cleanArgs[0]
 	src := cleanArgs[1]
 
-	if err := syncDir(src, dest); err != nil {
+	ignore := NewIgnore()
+	for _, pattern := range excludes {
+		ignore.Add(pattern)
+	}
+	if err := ignore.AddFile(filepath.Join(src, ignoreFileName)); err != nil {
+		log.Printf("[sync] cannot read %s: %v", ignoreFileName, err)
+	}
+	if !ignore.Empty() {
+		log.Printf("[sync] leaving behind: %s", strings.Join(ignore.Patterns(), ", "))
+	}
+
+	if err := syncDir(src, dest, ignore); err != nil {
 		return err
 	}
 
 	if bidirectional {
-		if err := syncDir(dest, src); err != nil {
+		if err := syncDir(dest, src, ignore); err != nil {
 			return err
 		}
 	}
 
 	if deleteOrphans {
-		removeOrphans(dest, src)
+		removeOrphans(dest, src, ignore)
 		if bidirectional {
-			removeOrphans(src, dest)
+			removeOrphans(src, dest, ignore)
 		}
 	}
 
 	return nil
 }
 
-func syncDir(src, dest string) error {
+func syncDir(src, dest string, ignore *Ignore) error {
 	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("sync: walk error at %s: %w", path, err)
@@ -285,6 +310,14 @@ func syncDir(src, dest string) error {
 
 		relPath, _ := filepath.Rel(src, path)
 		if relPath == "." {
+			return nil
+		}
+
+		// Skip whole trees, not just the file that matched.
+		if ignore.Match(relPath, info.IsDir()) {
+			if info.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
@@ -369,7 +402,7 @@ func sameFile(a, b string) bool {
 	}
 }
 
-func removeOrphans(dest, src string) {
+func removeOrphans(dest, src string, ignore *Ignore) {
 	filepath.Walk(dest, func(destPath string, destInfo os.FileInfo, err error) error {
 		if err != nil {
 			return nil
@@ -377,6 +410,14 @@ func removeOrphans(dest, src string) {
 
 		relPath, _ := filepath.Rel(dest, destPath)
 		if relPath == "." {
+			return nil
+		}
+
+		// What the sync leaves behind is not an orphan: it was never copied.
+		if ignore.Match(relPath, destInfo.IsDir()) {
+			if destInfo.IsDir() {
+				return filepath.SkipDir
+			}
 			return nil
 		}
 
