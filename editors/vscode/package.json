@@ -3,6 +3,7 @@
   "displayName": "GopherGuard",
   "description": "Syntax highlighting for GopherGuard .ggs scripts and .ggignore files",
   "version": "0.1.0",
+  "publisher": "kaioshg",
   "engines": {
     "vscode": "^1.70.0"
   },

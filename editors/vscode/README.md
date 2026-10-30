@@ -16,10 +16,12 @@ you use decides the colors.
 From this directory (`editors/vscode`):
 
 **The quick way** — copy the folder into your extensions directory and restart
-VS Code:
+VS Code. The folder name has to follow `<publisher>.<name>-<version>`, and the
+manifest needs a `publisher`, or VS Code silently ignores it:
 
 ```powershell
-Copy-Item -Recurse . "$env:USERPROFILE\.vscode\extensions\gguard-0.1.0"
+Copy-Item -Recurse . "$env:USERPROFILE\.vscode\extensions\kaioshg.gguard-0.1.0"
+code --list-extensions | Select-String gguard   # must print kaioshg.gguard
 ```
 
 **The tidy way** — package it and install the `.vsix` (it then shows up in the
@@ -27,7 +29,7 @@ Extensions list, and updates like any other):
 
 ```bash
 npx @vscode/vsce package
-code --install-extension gguard-0.1.0.vsix
+code --install-extension kaioshg.gguard-0.1.0.vsix
 ```
 
 **While developing it** — open this folder in VS Code and press `F5`: a new
@@ -46,6 +48,8 @@ this repository, the routines' own `sync --exclude` rules are documented in
 
 ## Publishing (not done yet)
 
-The extension is kept in the repository without being distributed. To publish
-it on the Marketplace, `vsce` needs a `publisher` in `package.json`, a
-marketplace account (`vsce login`), and ideally a `license` and an icon.
+The extension is kept in the repository without being distributed. The
+`publisher` in `package.json` (`kaioshg`) is there so VS Code accepts the
+manifest; publishing for real also needs that publisher registered on the
+Marketplace (`vsce login`, `vsce publish`), and ideally a `license` and an
+icon.
