@@ -7,6 +7,10 @@ Syntax highlighting for the two files GopherGuard reads:
 | `*.ggs` | `ggs` | Verbs, `--flags`, strings, `{variables}`, durations, `# comments`, the guard name |
 | `.ggignore` | `ggignore` | `# comments`, `!` negation, `*`/`**`/`?`, `/` anchors, paths |
 
+Both languages also carry the project's shield as their **file icon**: VS Code
+uses it in the explorer and the tabs, and keeps the icon from the file icon
+theme whenever that theme has one of its own.
+
 It is a plain **TextMate grammar**: no build step, no language server, nothing
 running in the background. The scopes are the standard ones, so whatever theme
 you use decides the colors.
@@ -28,9 +32,14 @@ code --list-extensions | Select-String gguard   # must print kaiohsg.gguard
 Extensions list, and updates like any other):
 
 ```bash
-npx @vscode/vsce package
-code --install-extension gguard-0.1.0.vsix
+npm run build            # -> gguard.vsix, no version in the name
+npm run install-local    # code --install-extension gguard.vsix
 ```
+
+`npm run build` just wraps `npx --yes @vscode/vsce package --out gguard.vsix`.
+The packaged `gguard.vsix` is committed on purpose, so it is always the current
+one: bump `version` in `package.json` before rebuilding, or VS Code will see the
+same version and skip the update.
 
 **In one profile** — with [profiles][profiles], only the *Default* profile reads
 the extensions directory. Every other profile keeps its own list, so the folder

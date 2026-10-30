@@ -14,8 +14,8 @@
 /cmd/gguard-setup/payload/*
 !/cmd/gguard-setup/payload/placeholder.txt
 
-# Packaged VS Code extension (vsce package); the source lives in editors/vscode.
-*.vsix
+# The packaged VS Code extension (editors/vscode/gguard.vsix) is committed on
+# purpose: it is always the build of the source next to it.
 
 /gg-scripts
 /guards.json
