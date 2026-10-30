@@ -3,7 +3,7 @@
 ## Build & Test
 
 ```bash
-# Dev build for the current OS (Windows: gguard.exe, Linux/macOS: gguard)
+# Dev build for the current OS, into the repo root
 go run build.go
 
 # Dist — all platforms (Windows x64/ARM, Linux x64/ARM) into dist/
@@ -12,6 +12,28 @@ go run build.go --dist
 
 `build.go` is a `//go:build ignore` helper run with `go run`, replacing the old
 `build.ps1`/`build.sh`. It needs `go-winres` on PATH to stamp Windows resources.
+
+Every target produces three binaries:
+
+| Binary | Package | Notes |
+|--------|---------|-------|
+| `gguard` | `cmd/gguard` | The app and a normal console CLI |
+| `gguard-launcher` | `cmd/gguard-launcher` | Windows only, built `-H=windowsgui`: starts `gguard` for the GUI entry points without a console |
+| `gguard-setup` | `cmd/gguard-setup` | Installer; embeds the two above from `cmd/gguard-setup/payload/` |
+
+`buildSet` in `build.go` builds the payload first and the installer last, because
+`go:embed` needs the files in `cmd/gguard-setup/payload/` to exist when
+`cmd/gguard-setup` is compiled. The payload is left in place afterwards (and
+gitignored), so a plain `go build ./cmd/gguard-setup` keeps working after a
+build. Release artifacts are the installer itself, renamed per platform
+(`GopherGuard-Windows-x64.exe`, `GopherGuard-Linux-ARM`, …) — nothing is
+archived or compressed on top of it.
+
+All three packages carry Windows resources (icon set, manifest, version info),
+so each has its own `winres/winres.json`; they share the icons, which stay in
+`cmd/gguard/winres/icons/` and are referenced with a relative path.
+`stampResources` runs go-winres in every one of them, passing the version it
+reads from `install/version.go` — the single place to bump a release.
 
 ## Lint & Test
 
@@ -25,25 +47,44 @@ Run `go build ./cmd/gguard`, `go vet ./...` and `go test ./...` to verify change
 ## Project Structure
 
 ```
-cmd/gguard/          — main package (the CLI binary)
-  main.go            — CLI subcommand dispatch (install/start/status/import/...), flag parsing,
+cmd/gguard/          — the app (guards, service, tray, dashboard)
+  main.go            — subcommand dispatch (start/stop/status/tray/gui/import/...), flag parsing,
                        runGuards(), config loading, status file, targetMode(), doImport(), doExport()
-  main_windows.go    — isServiceManager(), isTerminal(), startElevated(), showInstallDialog(),
-                       pauseBeforeExit(), activeUserConfigDir() (WTS API), userConfigDir()
-  main_other.go      — same as main_windows.go but non-Windows (pkexec/sudo, isServiceManager=false)
-  service.go         — program struct (service.Interface), serviceControl(), logging
-  install.go         — doInstall(), doUninstall(), doUpgrade(), detectInstallType(), install dir removal
-  install_windows.go — Windows: install dirs, PATH registry, Start Menu shortcuts, admin check, Apps & Features entry
-  install_other.go   — Linux/macOS: desktop entry, icon, install dirs (PATH/registry no-op)
+  main_windows.go    — isServiceManager(), consoleAvailable() (GetConsoleWindow), activeUserConfigDir()
+                       (WTS API), userConfigDir()
+  main_other.go      — same as main_windows.go but non-Windows (isServiceManager=false)
+  service.go         — program struct (service.Interface), newService(), serviceControl(), logging
   icon.go            — tray/app icon rendering (embeds winres/icons/)
   state.go           — runtime state/status file
-  tray*.go           — system tray UI (Windows/non-Windows, systray)
+  tray*.go           — system tray UI (Windows/non-Windows, systray), tray_ctl_* helpers
   gui.go             — loopback dashboard (doGUI, startDashboard, log ring, tray integration)
   open.go            — openURL()/openPath(): default browser/handler per platform
-  resources.go       — embeds the resources/ directory
-  resources/         — embedded assets (gguard.desktop, gguard.png, dashboard.html)
+  resources.go       — embeds resources/ (dashboard.html)
   winres/            — go-winres config + icons (winres.json, icons/)
   icon_test.go       — icon rendering tests
+cmd/gguard-launcher/ — windowless launcher (-H): hands its arguments to gguard and detaches
+  main.go            — main(), nothing else: appPath(), startDetached(), notify()
+  proc_windows.go    — appPath(), startDetached() (DETACHED_PROCESS), notify() (message box)
+  proc_other.go      — the non-Windows counterparts (the launcher is only shipped for Windows)
+  winres/            — go-winres config (icons/version shared with the app)
+cmd/gguard-setup/    — installer (install/upgrade/uninstall + double-click dialog)
+  main.go            — subcommand dispatch, flag parsing, showDialog()
+  install.go         — doInstall(), doUpgrade(), doUninstall(), copying scripts and config
+  elevate_windows.go — UAC prompt for a system install
+  elevate_other.go   — pkexec/sudo for the same
+  payload*.go        — embedded binaries (payload/) and the per-platform file lists
+  winres/            — go-winres config (icons/version shared with the app)
+  payload/           — generated by build.go; placeholder.txt keeps the package compiling
+install/             — shared machine facts used by the app and the installer
+  version.go         — Version: the single release version, printed and stamped by build.go
+  install.go         — Config/New/NewFor/Control, DetectType(), ServiceExists(), RunningAny(),
+                       CopyFile(), CopyDir(), AbsPath()
+  install_windows.go — TargetDir(), ExeName(), IsAdmin(), LauncherPath(), tray setting (Run key)
+  install_other.go   — the non-Windows counterparts (no tray setting, /usr/local/bin)
+  system_windows.go  — PATH, Start Menu shortcut, Apps & Features, delete-on-reboot
+  system_other.go    — desktop entry, icon, and the no-ops for the Windows-only pieces
+  remove.go          — Uninstall(), ServiceName(), ModeName(), removeDir()
+  resources.go       — embeds resources/ (gguard.desktop, gguard.png) for the Linux install
 build.go             — cross-platform build script (go run build.go [--dist]); replaces build.ps1/build.sh
 engine/              — File watcher engine (watcher, dispatcher, debouncer, engine)
 ggs/                 — .ggs script parser (AST, parser)
@@ -53,32 +94,44 @@ img/                 — README images
 docs/                — GG-Script.md, Guards-JSON.md documentation
 ```
 
-`resources/` and `winres/` live inside `cmd/gguard/` because `go:embed` cannot reference paths outside the package directory.
+`resources/`, `payload/` and `winres/` live inside their package directories because `go:embed` cannot reference paths outside the package directory.
 
 ## Platform-specific Files (Go Build Tags)
 
 | File | Tag |
 |------|-----|
 | `cmd/gguard/main_windows.go` | `//go:build windows` |
-| `cmd/gguard/install_windows.go` | `//go:build windows` |
 | `cmd/gguard/main_other.go` | `//go:build !windows` |
-| `cmd/gguard/install_other.go` | `//go:build !windows` |
+| `cmd/gguard/tray_windows.go`, `tray_ctl_windows.go` | `//go:build windows` |
+| `cmd/gguard/tray_other.go`, `tray_ctl_other.go` | `//go:build !windows` |
+| `cmd/gguard-setup/elevate_windows.go`, `payload_windows.go` | `//go:build windows` |
+| `cmd/gguard-setup/elevate_other.go`, `payload_other.go` | `//go:build !windows` |
+| `install/install_windows.go`, `system_windows.go` | `//go:build windows` |
+| `install/install_other.go`, `system_other.go` | `//go:build !windows` |
 
 ## Key Conventions
 
-- CLI: subcommands (`install`, `uninstall`, `upgrade`, `start`, `stop`, `restart`, `status`, `import <file>`, `export`, `version`, `help`); flags are accepted before or after the subcommand.
+- Three binaries: `gguard` (the app, a normal console program), `gguard-launcher` (Windows only, built `-H=windowsgui`) and `gguard-setup` (the installer, which embeds both).
+- `-H` belongs to the launcher, not the app: everything Windows starts without a terminal (logon entry, Start Menu shortcut, GUI buttons) invokes `gguard-launcher`, which runs `gguard` detached and exits, so no console ever appears. The launcher does nothing else — a terminal talks to `gguard` directly.
+- Installing and upgrading live **only** in `gguard-setup`; `gguard install|upgrade` refuses and points there. Uninstalling is the app's own command (`gguard uninstall`), because the app is what the install directory and the Apps & Features entry point at — so the installer is never copied into the install directory, which holds `gguard` and `gguard-launcher` and nothing else.
+- Both paths call `install.Uninstall(userService)`, which stops and removes the service, undoes the desktop/PATH/registry/tray integration and empties the install directory (`removeDir` leaves what Windows keeps locked to the next boot).
+- CLI: subcommands (`uninstall`, `start`, `stop`, `restart`, `status`, `tray`, `gui`, `logs`, `list`, `check`, `run`, `import <file>`, `export`, `version`, `help`); flags are accepted before or after the subcommand.
 - Flags: double-dash `--flag` normalized to `-flag` in main() via os.Args mutation.
-- Running as service manager (`isServiceManager()`) takes precedence over subcommands; a bare interactive run with no flags shows the install dialog via `showInstallDialog()`.
+- `consoleAvailable()`: true only when the process has a terminal (Windows: a console window exists; elsewhere: stdin is a char device). It decides between printing usage and opening the dashboard on a bare run, and between console logs and `gguard.log`.
+- Running as service manager (`isServiceManager()`) takes precedence over subcommands.
 - `dispatch()` routes subcommands; `targetMode(userFlag)` decides system vs user for service/import/export.
 - Service names: `"gguard"` (system) vs `"gguard-user"` (user).
-- `isAdmin()`: checks token group membership (Windows) / euid (Linux).
+- `install.IsAdmin()`, `install.DetectType()`, `install.ServiceExists()` and `install.TargetDir()` come from the shared `install/` package, used by both binaries.
 - `activeUserConfigDir()`: returns the logged-in console user's config dir (Windows via WTS API).
-- `userConfigDir()`: returns the current process user's config dir (same as `installTargetDir(true)`).
+- `userConfigDir()`: returns the current process user's config dir (same as `install.TargetDir(true)`).
 - `targetMode()`: auto-detects system/user based on admin status; `--user` always overrides to user.
 - `serviceControl()` returns `error` instead of calling log.Fatalf (callers decide).
 - `runForeground(ctx, cancel, foregroundOptions)` is the only foreground entry point: guards + tray (when the tray setting is on, or forced by `gguard tray`) + dashboard (`gguard gui`, or whenever the tray is up). It blocks until the guards stop.
-- The tray is a **setting**, not a command: `trayEnabled()` reads the per-user logon entry written by `enableTrayAutostart()` and removed by `disableTrayAutostart()`. `doInstall()` enables it only for a fresh install, so an upgrade never overrides `tray --off`.
-- Launcher-started processes (double-click, Start Menu shortcut, logon entry) call `hideOwnConsole()` and report errors through `fatalUserError()`, which uses a message box when the console is gone.
+- The tray is a **setting**, not a command: `install.TrayEnabled()` reads the per-user logon entry written by `install.EnableTrayAutostart()` and removed by `install.DisableTrayAutostart()`. `gguard-setup` enables it only for a fresh install, so an upgrade never overrides `tray --off`.
+- Errors from a process without a console go through `fatalUserError()`, which falls back to a message box instead of vanishing.
+- The logon entry and the Start Menu shortcut go through `install.LauncherPath()` (the launcher, falling back to the app when there is none); the service points at `gguard` directly.
+- Nothing that runs without a console may spawn `cmd.exe` casually: `openPath`/`openURL` use `ShellExecuteW` on Windows, and the engine's `run` verb sets `CREATE_NO_WINDOW`, or a black window would flash on every click and every guard run.
+- `gguard-setup` extracts its payload with `installPayload()` and copies itself with `selfInstall()`, so the install directory always holds app, launcher and installer. `removeInstallDir()` schedules a delete-on-reboot for whatever Windows keeps locked.
 - `doGUI()` opens the existing dashboard when one already answers on `guiDefaultPort` (8642), so only one process ever runs the guards; `quitDashboard()` lets `tray --off` stop an instance with no usable pid file.
 - `teeLogs()` mirrors the process log into a ring buffer so the dashboard shows it even when the console is gone; `logTee` adds `gguard.log` to the same output in quiet mode.
 - `trayPidPath()` lives in the user cache dir, because a system install directory (Program Files) is not writable by the user running the tray.

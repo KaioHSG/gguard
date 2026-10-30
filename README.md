@@ -41,26 +41,34 @@ message "Backup saved at \"{dest}\""
 
 ### 5. Installation
 
+Installing is the job of **`gguard-setup`**, which carries the binaries it
+writes, so a single download is enough. Double-click it for a menu, or use it
+from a terminal. The release files **are** the installer, named for the
+platform (the examples below call it `gguard-setup`):
+
+| Release file | Platform |
+|--------------|----------|
+| `GopherGuard-Windows-x64.exe` | Windows 64-bit |
+| `GopherGuard-Windows-ARM.exe` | Windows on ARM |
+| `GopherGuard-Linux-x64` | Linux 64-bit |
+| `GopherGuard-Linux-ARM` | Linux on ARM |
+
+On Linux, mark it executable once: `chmod +x GopherGuard-Linux-x64`.
+
 #### System-wide (requires admin)
 
 ```powershell
 # Windows (Run as Administrator)
-.\gguard.exe install
-.\gguard.exe start
-.\gguard.exe status
-.\gguard.exe stop
+.\gguard-setup.exe install
 ```
 
 ```bash
 # Linux (with sudo)
-sudo ./gguard install
-sudo ./gguard start
-sudo ./gguard status
-sudo ./gguard stop
+sudo ./gguard-setup install
 ```
 
 Installs to:
-- **Windows**: `%ProgramFiles%\GopherGuard\gguard.exe`
+- **Windows**: `%ProgramFiles%\GopherGuard\`
 - **Linux**: `/usr/local/bin/gguard`
 
 Adds to system PATH, registers as a system service (`gguard`), turns the tray on (`gguard tray --off` to disable), and creates a Start Menu shortcut (Windows) / desktop entry (Linux) that opens the **dashboard**.
@@ -68,15 +76,51 @@ Adds to system PATH, registers as a system service (`gguard`), turns the tray on
 #### Per-user (no admin required)
 
 ```bash
-./gguard install --user
-./gguard start --user
+./gguard-setup install --user
 ```
 
 Installs to:
-- **Windows**: `%APPDATA%\Programs\GopherGuard\gguard.exe`
+- **Windows**: `%APPDATA%\Programs\GopherGuard\`
 - **Linux**: `~/.local/bin/gguard`
 
 Registers as a user service (`gguard-user`), runs under your account while logged in.
+
+#### The three binaries
+
+| File | What it is |
+|------|------------|
+| `gguard` | The app: guards, service, tray, dashboard, `uninstall` — and a normal console program, so `gguard status` works in a terminal |
+| `gguard-launcher` | **Windows only.** A windowless launcher that starts `gguard` with the same arguments and returns immediately |
+| `gguard-setup` | The installer: `install`, `upgrade`, `uninstall`, and the double-click menu. It runs from where you downloaded it — it is **not** copied into the install directory |
+
+The launcher is built **without a console** (`-H=windowsgui`), and that is the
+point of it: anything Windows starts on its own — the logon entry, the Start
+Menu shortcut, a GUI button that needs a new process — goes through the
+launcher, which hands its arguments to `gguard`, detaches and leaves. No
+console ever appears.
+
+That frees `gguard` to stay a normal console program, so the terminal is
+unchanged:
+
+```powershell
+gguard status
+gguard gui
+```
+
+#### Upgrading and uninstalling
+
+```bash
+gguard-setup upgrade      # keeps the same install type and the tray setting
+gguard uninstall          # the app removes itself, its service and its shortcuts
+```
+
+Uninstalling lives in **the app**, not the installer: the app is what the
+install directory and the Apps & Features entry point at, so it keeps working
+long after the original download is gone. The install directory therefore holds
+`gguard` and `gguard-launcher` and nothing else.
+
+On Windows a running file cannot delete itself, so the app asks the system to
+finish removing the install directory on the next restart.
 
 ### 6. Service Management (Auto-detect Mode)
 
@@ -86,7 +130,7 @@ The remaining commands auto-detect the system/user service based on your privile
 
 | Command | Without `--user` | With `--user` |
 |---------|------------------|---------------|
-| `install` | **system** (needs admin) | **user** (no admin) |
+| `gguard-setup install` | **system** (needs admin) | **user** (no admin) |
 | `start` | **system** (needs admin) | **user** |
 | `stop` | **system** (needs admin) | **user** |
 | `restart` | **system** (needs admin) | **user** |
@@ -196,14 +240,18 @@ When running as a service, logs are written to `gguard.log` in the install direc
 - **System**: `%ProgramFiles%\GopherGuard\gguard.log`
 - **User**: `%APPDATA%\Programs\GopherGuard\gguard.log`
 
-Use `-q` or `--quiet` to force log-to-file in foreground mode.
+Use `-q` or `--quiet` to force log-to-file in foreground mode. A process started
+without a console (the logon entry, the Start Menu shortcut) writes to the log
+file automatically, since there is nowhere else for its output to go.
 
 ### 13. Command Line
 
-Running `gguard` with no command prints the help. The installer dialog only appears when the executable is double-clicked (launched without an attached shell).
+Running `gguard` with no command prints the help. Installing and upgrading live
+in `gguard-setup`, which `gguard` points you to; uninstalling is the app's own.
 
 | Command | Description |
 |---------|-------------|
+| `gguard uninstall [--user]` | Remove GopherGuard, its service and its shortcuts |
 | `gguard list` | List installed guards with autostart flag and watch path |
 | `gguard check <file>` | Validate a `.ggs` script and print the resolved plan (dry run) |
 | `gguard run <file>` | Run a `.ggs` script once, in the foreground |
@@ -213,8 +261,17 @@ Running `gguard` with no command prints the help. The installer dialog only appe
 | `gguard logs [-f]` | Show the log file (`--follow` to keep it open) |
 
 The Start Menu shortcut (Windows) and the desktop entry (Linux) open the
-dashboard. The installer dialog only appears when the executable is
-double-clicked **before** GopherGuard is installed.
+dashboard. Everything Windows starts by itself goes through `gguard-launcher`,
+which runs `gguard` without a console; in a terminal you talk to `gguard`
+directly.
+
+| Setup command | Description |
+|---------------|-------------|
+| `gguard-setup` | Show the installer menu (this is what a double-click does) |
+| `gguard-setup install [--user]` | Install or upgrade GopherGuard |
+| `gguard-setup upgrade` | Reinstall, keeping the same install type |
+| `gguard-setup uninstall [--user]` | Same as `gguard uninstall`, for when the installer is at hand |
+| `gguard-setup -s <path> -g <path>` | Also install scripts and a `guards.json` |
 
 ### 14. Tray & Notifications
 
