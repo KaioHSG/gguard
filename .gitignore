@@ -14,6 +14,9 @@
 /cmd/gguard-setup/payload/*
 !/cmd/gguard-setup/payload/placeholder.txt
 
+# Packaged VS Code extension (vsce package); the source lives in editors/vscode.
+*.vsix
+
 /gg-scripts
 /guards.json
 

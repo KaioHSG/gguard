@@ -29,11 +29,25 @@ Extensions list, and updates like any other):
 
 ```bash
 npx @vscode/vsce package
-code --install-extension kaioshg.gguard-0.1.0.vsix
+code --install-extension gguard-0.1.0.vsix
 ```
+
+**In one profile** — with [profiles][profiles], only the *Default* profile reads
+the extensions directory. Every other profile keeps its own list, so the folder
+copy above is invisible there; install the `.vsix` with `--profile`:
+
+```bash
+code --profile "Go" --install-extension gguard-0.1.0.vsix
+code --profile "Go" --list-extensions | Select-String gguard   # kaioshg.gguard
+```
+
+[profiles]: https://code.visualstudio.com/docs/configure/profiles
 
 **While developing it** — open this folder in VS Code and press `F5`: a new
 window opens with the extension loaded.
+
+The packaged `gguard-<version>.vsix` is a build artifact: it is ignored by git
+and can be deleted after installing.
 
 ## Checking it works
 
