@@ -1,6 +1,7 @@
 package install
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -20,6 +21,21 @@ func ModeName(userService bool) string {
 		return "user"
 	}
 	return "system"
+}
+
+// ModeHint explains a missing installation. --user selects which installation a
+// command acts on; it never creates one, so when the asked-for mode is not
+// there the useful answer names the mode that is.
+func ModeHint(userService bool) string {
+	if ServiceExists(ServiceName(!userService)) {
+		flag := "without --user"
+		if !userService {
+			flag = "with --user"
+		}
+		return fmt.Sprintf("no %s installation found — a %s one is installed; run the command %s.",
+			ModeName(userService), ModeName(!userService), flag)
+	}
+	return "GopherGuard is not installed. Run the installer (gguard-setup) first."
 }
 
 // Uninstall removes the service and everything the installer put on the system

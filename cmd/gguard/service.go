@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,17 +17,37 @@ import (
 type program struct {
 	ctx    context.Context
 	cancel context.CancelFunc
+	srv    *http.Server
 }
 
+// Start runs the routines and serves the dashboard, exactly like the runner
+// process does: that way the tray icon and 'gguard gui' work the same way in a
+// service install, and one process owns the routines either way.
 func (p *program) Start(s service.Service) error {
 	p.ctx, p.cancel = context.WithCancel(context.Background())
-	go runGuards(p.ctx, newGuardSession())
+	sess := newGuardSession()
+	go runGuards(p.ctx, sess)
+
+	go func() {
+		<-sess.loaded
+		url, srv, err := startDashboard(sess, trayStatus(sess), logTee, sess.requestStop)
+		if err != nil {
+			log.Printf("dashboard: %v", err)
+			return
+		}
+		p.srv = srv
+		log.Printf("gguard: dashboard on %s", url)
+	}()
+
 	return nil
 }
 
 func (p *program) Stop(s service.Service) error {
 	if p.cancel != nil {
 		p.cancel()
+	}
+	if p.srv != nil {
+		_ = p.srv.Close()
 	}
 	return nil
 }

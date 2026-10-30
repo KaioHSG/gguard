@@ -31,14 +31,23 @@ func colorForState(s GuardState) color.RGBA {
 	return statusColors[StateIdle]
 }
 
+// The tray menu icon is drawn at 16px, and the dot keeps a margin inside it:
+// a circle that fills the whole canvas has its anti-aliased edge on the last
+// pixel, which the menu renders edge to edge and looks clipped at the bottom
+// and the right.
+const (
+	statusDotSize   = 16
+	statusDotMargin = 3
+)
+
 // statusDotICO renders a plain circular dot, used next to each guard name in
 // the tray menu.
 func statusDotICO(state GuardState) []byte {
-	return dotICO(state, 16)
+	return dotICO(state, statusDotSize, statusDotMargin)
 }
 
-func dotICO(state GuardState, size int) []byte {
-	return encodeICO(dotImage(colorForState(state), size))
+func dotICO(state GuardState, size, margin int) []byte {
+	return encodeICO(dotImage(colorForState(state), size, margin))
 }
 
 // trayIconICO renders the embedded app icon with a state badge in the
@@ -47,7 +56,7 @@ func dotICO(state GuardState, size int) []byte {
 func trayIconICO(state GuardState) []byte {
 	img := iconImage()
 	if img == nil {
-		return dotICO(state, fallbackIconSize)
+		return dotICO(state, fallbackIconSize, statusDotMargin*fallbackIconSize/statusDotSize)
 	}
 	drawBadge(img, colorForState(state))
 	return encodeICO(img)
@@ -66,11 +75,13 @@ func iconImage() *image.RGBA {
 }
 
 // Badge geometry, as a fraction of the icon size so it scales with whatever
-// icon is embedded. Bump badgeRadiusRatio to make the dot bigger.
+// icon is embedded. The numbers keep the dot about 5px across on the 24px tray
+// icon, with room to spare at the corner: a bigger dot sits on the very edge
+// and looks clipped at the bottom and the right.
 const (
-	badgeRadiusRatio = 0.15 // dot radius
-	badgeRingRatio   = 0.05 // dark outline width around the dot
-	badgeMarginRatio = 0.02 // gap between the dot and the icon edge
+	badgeRadiusRatio = 0.105 // dot radius (5px diameter at 24px)
+	badgeRingRatio   = 0.03  // dark outline width around the dot
+	badgeMarginRatio = 0.05  // gap between the dot and the icon edge
 )
 
 var badgeOutline = color.RGBA{R: 0x0f, G: 0x17, B: 0x2a, A: 0xff}
@@ -141,13 +152,14 @@ func over(dst, src color.RGBA, cov float64) color.RGBA {
 	}
 }
 
-// dotImage draws a filled, anti-aliased circle of the given size.
-func dotImage(c color.RGBA, size int) *image.RGBA {
+// dotImage draws a filled, anti-aliased circle of the given size, leaving
+// margin pixels of empty space around it.
+func dotImage(c color.RGBA, size, margin int) *image.RGBA {
 	const ss = 4
 
 	big := image.NewRGBA(image.Rect(0, 0, size*ss, size*ss))
 	center := float64(size*ss) / 2
-	radius := center - float64(ss)
+	radius := center - float64(margin*ss)
 	r2 := radius * radius
 
 	for y := 0; y < size*ss; y++ {

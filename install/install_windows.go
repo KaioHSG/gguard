@@ -75,7 +75,10 @@ func EnableTrayAutostart(exePath string) error {
 	}
 	defer key.Close()
 
-	return key.SetStringValue(trayRunValue, `"`+exePath+`" tray -q`)
+	// --foreground so the entry *is* the tray: without it, 'tray' would ask for
+	// another one to be started and exit. -q because there is no console at
+	// logon, so the log goes to gguard.log.
+	return key.SetStringValue(trayRunValue, `"`+exePath+`" tray --foreground -q`)
 }
 
 // TrayEnabled reports whether the tray is turned on. It is the "tray on/off"

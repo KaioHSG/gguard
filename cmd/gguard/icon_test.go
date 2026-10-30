@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"image"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -107,16 +108,44 @@ func TestRenderTrayPreview(t *testing.T) {
 			t.Fatal("cannot decode tray icon")
 		}
 		drawBadge(img, colorForState(s))
+		writePNG(t, filepath.Join(dir, s.String()+".png"), img)
 
-		f, err := os.Create(filepath.Join(dir, s.String()+".png"))
-		if err != nil {
-			t.Fatal(err)
+		// The menu dot, blown up so the margin around it is visible: margin 1
+		// puts the anti-aliased edge on the last pixel, which the menu renders
+		// edge to edge.
+		for _, margin := range []int{1, 2, 3} {
+			dot := dotImage(colorForState(s), statusDotSize, margin)
+			name := filepath.Join(dir, "dot-"+s.String()+"-margin"+string(rune('0'+margin))+".png")
+			writePNG(t, name, scaleUp(dot, 16))
 		}
-		if err := png.Encode(f, img); err != nil {
-			t.Fatal(err)
-		}
-		f.Close()
 	}
+}
+
+func writePNG(t *testing.T, path string, img image.Image) {
+	t.Helper()
+
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if err := png.Encode(f, img); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// scaleUp blows an image up with nearest neighbours, so a 16px icon can be
+// looked at.
+func scaleUp(src *image.RGBA, factor int) *image.RGBA {
+	b := src.Bounds()
+	dst := image.NewRGBA(image.Rect(0, 0, b.Dx()*factor, b.Dy()*factor))
+
+	for y := 0; y < dst.Bounds().Dy(); y++ {
+		for x := 0; x < dst.Bounds().Dx(); x++ {
+			dst.SetRGBA(x, y, src.RGBAAt(b.Min.X+x/factor, b.Min.Y+y/factor))
+		}
+	}
+	return dst
 }
 
 var errTest = &testError{"boom"}

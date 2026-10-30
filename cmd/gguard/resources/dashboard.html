@@ -115,6 +115,8 @@
 
   <div class="actions">
     <button id="run-all">Run all now</button>
+    <button id="reload" title="Re-read the .ggs scripts and guards.json and start them again">Restart routines</button>
+    <button id="stop" title="Stop the routines but keep the page (and the tray) up">Stop routines</button>
     <button id="quit">Quit</button>
   </div>
 
@@ -222,6 +224,18 @@ $("run-all").onclick = () => {
   $("run-all").disabled = true;
   post("api/run").catch(() => {});
   setTimeout(() => { $("run-all").disabled = false; refresh(); }, 800);
+};
+
+$("reload").onclick = () => {
+  $("reload").disabled = true;
+  post("api/reload").catch(() => {});
+  setTimeout(() => { $("reload").disabled = false; refresh(); }, 600);
+};
+
+$("stop").onclick = () => {
+  $("stop").disabled = true;
+  post("api/stop").catch(() => {});
+  setTimeout(() => { $("stop").disabled = false; refresh(); }, 600);
 };
 
 $("quit").onclick = () => {

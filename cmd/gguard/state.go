@@ -151,6 +151,29 @@ func (t *StatusTracker) Entries() []statusEntry {
 	return entries
 }
 
+// Prune drops every guard that is not in keep, preserving the state and run
+// counts of the ones that stay. It is how a reload forgets routines whose
+// scripts were deleted.
+func (t *StatusTracker) Prune(keep []string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	kept := make(map[string]bool, len(keep))
+	for _, name := range keep {
+		kept[name] = true
+	}
+
+	order := t.order[:0]
+	for _, name := range t.order {
+		if kept[name] {
+			order = append(order, name)
+			continue
+		}
+		delete(t.guards, name)
+	}
+	t.order = order
+}
+
 // Names returns the guard names in registration order.
 func (t *StatusTracker) Names() []string {
 	t.mu.Lock()

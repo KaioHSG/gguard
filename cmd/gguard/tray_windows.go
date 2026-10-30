@@ -8,118 +8,193 @@ import (
 	"fyne.io/systray"
 )
 
-// trayOptions carries everything the tray needs to drive the running guards.
+// trayOptions carries what the icon needs. It is a *view* of the runner: the
+// routines live in another process, so everything the menu does — showing the
+// states, running, restarting, stopping — goes through the dashboard API the
+// runner already serves. That is what makes closing the icon harmless.
 type trayOptions struct {
-	tracker   *StatusTracker
-	runAll    func()
-	runOne    func(string)
+	// runnerURL is where the runner answers, or "" when it is not up.
+	runnerURL func() string
 	logPath   string
 	configDir string
-	onQuit    func()
-	// status returns the overall state and a short label to display. When no
-	// guards are loaded it reports the service state instead.
-	status func() (GuardState, string)
-	// dashboardURL, when set, adds a menu entry that opens the web dashboard.
-	dashboardURL string
+	// start brings the runner up when it is not running.
+	start func()
 }
 
 // trayAvailable reports whether a system tray can be shown on this platform.
 func trayAvailable() bool { return true }
 
-// quitTray closes the tray icon, ending runTray. It is safe to call even when
-// the tray was never shown.
-func quitTray() { systray.Quit() }
-
-// runTray shows the tray icon and blocks until the user quits it. It must be
+// runTray shows the tray icon and blocks until the user closes it. It must be
 // called from the main goroutine.
 func runTray(opts trayOptions) {
 	systray.Run(func() {
-		header := systray.AddMenuItem("GopherGuard", "Current status")
-		header.Disable()
+		menu := &trayMenu{opts: opts}
+		menu.build()
+		menu.refresh()
 
-		// One entry per guard, each with its own colored dot.
-		names := opts.tracker.Names()
-		guardItems := make(map[string]*systray.MenuItem, len(names))
-		if len(names) > 0 {
-			systray.AddSeparator()
-			for _, name := range names {
-				item := systray.AddMenuItem(name, "Run this guard now")
-				item.SetIcon(statusDotICO(opts.tracker.State(name)))
-				guardItems[name] = item
-			}
-		}
-
-		systray.AddSeparator()
-		var dashCh chan struct{}
-		if opts.dashboardURL != "" {
-			dashCh = systray.AddMenuItem("Open dashboard", "Open the web dashboard in your browser").ClickedCh
-		}
-		runItem := systray.AddMenuItem("Run all now", "Run every guard immediately")
-		logItem := systray.AddMenuItem("Open log", "Open gguard.log")
-		dirItem := systray.AddMenuItem("Open folder", "Open the install folder")
-		systray.AddSeparator()
-		quitItem := systray.AddMenuItem("Quit", "Stop GopherGuard")
-
-		refresh := func() {
-			state := StateIdle
-			label := "idle"
-			if opts.status != nil {
-				state, label = opts.status()
-			}
-			systray.SetIcon(trayIconICO(state))
-			systray.SetTooltip("GopherGuard — " + label)
-			header.SetTitle("GopherGuard — " + label)
-
-			for name, item := range guardItems {
-				item.SetIcon(statusDotICO(opts.tracker.State(name)))
-			}
-		}
-
-		opts.tracker.AddListener(refresh)
-		refresh()
-
-		// Poll so the icon also tracks the service state when there are no
-		// local guards.
 		go func() {
 			ticker := time.NewTicker(3 * time.Second)
 			defer ticker.Stop()
 			for range ticker.C {
-				refresh()
+				menu.refresh()
 			}
 		}()
-
-		go func() {
-			for {
-				select {
-				case <-dashCh:
-					openURL(opts.dashboardURL)
-				case <-runItem.ClickedCh:
-					if opts.runAll != nil {
-						go opts.runAll()
-					}
-				case <-logItem.ClickedCh:
-					openPath(opts.logPath)
-				case <-dirItem.ClickedCh:
-					openPath(opts.configDir)
-				case <-quitItem.ClickedCh:
-					if opts.onQuit != nil {
-						opts.onQuit()
-					}
-					systray.Quit()
-					return
-				}
-			}
-		}()
-
-		// Per-guard click handlers.
-		for name, item := range guardItems {
-			go func(name string, item *systray.MenuItem) {
-				for range item.ClickedCh {
-					if opts.runOne != nil {
-						go opts.runOne(name)
-					}
-				}
-			}(name, item)
-		}
 	}, func() {})
+}
+
+// trayMenu is the menu currently on screen. It is thrown away and built again
+// whenever the routines or the runner change, because systray only appends:
+// rebuilding is what keeps the order stable.
+type trayMenu struct {
+	opts       trayOptions
+	online     bool
+	guards     []statusEntry
+	items      []*systray.MenuItem
+	guardItems map[string]*systray.MenuItem
+	header     *systray.MenuItem
+}
+
+// refresh pulls the current state from the runner and redraws what changed.
+func (m *trayMenu) refresh() {
+	url := m.opts.runnerURL()
+	state, online := fetchState(url)
+	if online != m.online || !sameGuards(state.Guards, m.guards) {
+		m.online = online
+		m.guards = state.Guards
+		m.build()
+	}
+
+	label := "not running"
+	iconState := StateIdle
+	if online {
+		label = state.Label
+		iconState = stateFromString(state.Overall)
+	}
+
+	systray.SetIcon(trayIconICO(iconState))
+	systray.SetTooltip("GopherGuard — " + label)
+	if m.header != nil {
+		m.header.SetTitle("GopherGuard — " + label)
+	}
+
+	for name, item := range m.guardItems {
+		item.SetIcon(statusDotICO(stateFromString(stateOf(state.Guards, name))))
+	}
+}
+
+// build drops the current menu and creates it again from scratch, starting the
+// click handlers of the new items.
+func (m *trayMenu) build() {
+	for _, item := range m.items {
+		item.Remove()
+	}
+	m.items = nil
+	m.guardItems = make(map[string]*systray.MenuItem)
+
+	title := "GopherGuard — not running"
+	if m.online {
+		title = "GopherGuard"
+	}
+	m.header = m.add(systray.AddMenuItem(title, "Current status"))
+	m.header.Disable()
+
+	if !m.online {
+		systray.AddSeparator()
+		m.onClick(m.add(systray.AddMenuItem("Start GopherGuard", "Start the process that runs the routines")), func() {
+			if m.opts.start != nil {
+				go m.opts.start()
+			}
+		})
+		systray.AddSeparator()
+		m.onClick(m.add(systray.AddMenuItem("Quit", "Close the tray icon")), systray.Quit)
+		return
+	}
+
+	// One entry per routine, each with its own colored dot.
+	if len(m.guards) > 0 {
+		systray.AddSeparator()
+		for _, guard := range m.guards {
+			item := systray.AddMenuItem(guard.Name, "Run this routine now")
+			item.SetIcon(statusDotICO(stateFromString(guard.State)))
+			m.guardItems[guard.Name] = item
+			m.items = append(m.items, item)
+
+			name := guard.Name
+			m.onClick(item, func() { m.post("/api/run", `{"name":"`+name+`"}`) })
+		}
+	}
+
+	systray.AddSeparator()
+	m.onClick(m.add(systray.AddMenuItem("Open dashboard", "Open the web dashboard in your browser")), func() {
+		openURL(m.opts.runnerURL())
+	})
+	m.onClick(m.add(systray.AddMenuItem("Run all now", "Run every routine immediately")), func() {
+		m.post("/api/run", "{}")
+	})
+	m.onClick(m.add(systray.AddMenuItem("Open log", "Open gguard.log")), func() {
+		openPath(m.opts.logPath)
+	})
+	m.onClick(m.add(systray.AddMenuItem("Open folder", "Open the install folder")), func() {
+		openPath(m.opts.configDir)
+	})
+
+	systray.AddSeparator()
+	m.onClick(m.add(systray.AddMenuItem("Stop Process", "Stop the routines, keeping the tray")), func() {
+		m.post("/api/stop", "{}")
+		time.Sleep(300 * time.Millisecond)
+		m.refresh()
+	})
+	m.onClick(m.add(systray.AddMenuItem("Restart Process", "Read the .ggs scripts and guards.json again and start them")), func() {
+		m.post("/api/reload", "{}")
+		time.Sleep(300 * time.Millisecond)
+		m.refresh()
+	})
+	m.onClick(m.add(systray.AddMenuItem("Stop and Quit", "Stop the routines and close the tray")), func() {
+		m.post("/api/quit", "{}")
+		systray.Quit()
+	})
+
+	systray.AddSeparator()
+	m.onClick(m.add(systray.AddMenuItem("Quit", "Close the tray icon; the routines keep running")), systray.Quit)
+}
+
+// post sends one action to the runner's API, which is the only thing the icon
+// can do: it does not own the routines.
+func (m *trayMenu) post(path, body string) {
+	postAPI(m.opts.runnerURL(), path, body)
+}
+
+func (m *trayMenu) add(item *systray.MenuItem) *systray.MenuItem {
+	m.items = append(m.items, item)
+	return item
+}
+
+// onClick runs fn on every click, and ends when the item is removed.
+func (m *trayMenu) onClick(item *systray.MenuItem, fn func()) {
+	go func() {
+		for range item.ClickedCh {
+			fn()
+		}
+	}()
+}
+
+func sameGuards(a, b []statusEntry) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			return false
+		}
+	}
+	return true
+}
+
+func stateOf(guards []statusEntry, name string) string {
+	for _, g := range guards {
+		if g.Name == name {
+			return g.State
+		}
+	}
+	return ""
 }

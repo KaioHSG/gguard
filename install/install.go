@@ -109,13 +109,32 @@ func DetectType() (userService bool, installed bool) {
 		return true, true
 	}
 
-	if exists(filepath.Join(TargetDir(false), ExeName())) {
+	if InstalledMode(false) {
 		return false, true
 	}
-	if exists(filepath.Join(TargetDir(true), ExeName())) {
+	if InstalledMode(true) {
 		return true, true
 	}
 	return false, false
+}
+
+// InstalledMode reports whether a mode is installed, whether or not it has a
+// service: a per-user install on Windows has none (see HasService).
+func InstalledMode(userService bool) bool {
+	return exists(filepath.Join(TargetDir(userService), ExeName()))
+}
+
+// HasService reports whether the mode runs as a service. A per-user install on
+// Windows does not: registering a Windows service needs the account password,
+// and the tray already starts the guards at logon.
+func HasService(userService bool) bool {
+	return ServiceExists(ServiceName(userService))
+}
+
+// ServiceHint explains an installation that has no service to start or stop.
+func ServiceHint(userService bool) string {
+	return fmt.Sprintf("the %s installation has no service registered; on Windows the tray starts the guards when you log on (use 'gguard tray --on' to enable it).",
+		ModeName(userService))
 }
 
 func exists(path string) bool {

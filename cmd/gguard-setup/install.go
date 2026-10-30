@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/KaioHSG/gguard/install"
 )
@@ -45,48 +46,14 @@ func doInstall(userService bool) {
 
 	args := installFiles(targetDir)
 
-	name := install.ServiceName(userService)
-	displayName := "GopherGuard"
-	if userService {
-		displayName = "GopherGuard (User)"
-	}
-
-	cfg := install.Config{
-		Name:             name,
-		DisplayName:      displayName,
-		Description:      "File watcher and backup automator",
-		Executable:       filepath.Join(targetDir, install.ExeName()),
-		Arguments:        args,
-		WorkingDirectory: targetDir,
-		UserService:      userService,
-	}
-
-	svc, err := install.New(cfg)
-	if err != nil {
-		log.Fatalf("cannot prepare the service: %v", err)
-	}
-
-	if install.ServiceExists(name) {
-		log.Printf("stopping the existing %s service...", name)
-		if old, err := install.New(install.Config{Name: name, DisplayName: name}); err == nil {
-			_ = install.Control(old, "stop")
-		}
-	}
-
-	if err := install.Control(svc, "install"); err != nil {
-		warn("%v", err)
-	}
-
-	// Upgrading stops the service first, so put it back the way it was found:
-	// a stopped service would silently stop watching files.
-	if wasInstalled {
-		if wasRunning {
-			if err := install.Control(svc, "start"); err != nil {
-				warn("%v", err)
-			}
-		} else {
-			log.Println("the gguard service is stopped. Run 'gguard start' to start it.")
-		}
+	// A per-user install on Windows has no service: Windows needs the account
+	// password to register one, and the tray already starts the guards when the
+	// user logs on. Elsewhere the per-user mode is a real service
+	// (systemd --user, launchd).
+	if userService && runtime.GOOS == "windows" {
+		log.Println("per-user install on Windows: no service, the tray starts the guards at logon.")
+	} else {
+		registerService(userService, targetDir, args, wasInstalled, wasRunning)
 	}
 
 	system := !userService
@@ -118,6 +85,51 @@ func doInstall(userService bool) {
 
 	fmt.Printf("\nGopherGuard installed to %s\n", targetDir)
 	fmt.Println("Restart your terminal for the PATH change to take effect.")
+}
+
+// registerService installs the service for a mode that has one, stopping an
+// existing one first and putting it back the way it was found: an upgrade that
+// leaves the service stopped would silently stop watching files.
+func registerService(userService bool, targetDir string, args []string, wasInstalled, wasRunning bool) {
+	name := install.ServiceName(userService)
+	displayName := "GopherGuard"
+	if userService {
+		displayName = "GopherGuard (User)"
+	}
+
+	svc, err := install.New(install.Config{
+		Name:             name,
+		DisplayName:      displayName,
+		Description:      "File watcher and backup automator",
+		Executable:       filepath.Join(targetDir, install.ExeName()),
+		Arguments:        args,
+		WorkingDirectory: targetDir,
+		UserService:      userService,
+	})
+	if err != nil {
+		log.Fatalf("cannot prepare the service: %v", err)
+	}
+
+	if install.ServiceExists(name) {
+		log.Printf("stopping the existing %s service...", name)
+		if old, err := install.New(install.Config{Name: name, DisplayName: name}); err == nil {
+			_ = install.Control(old, "stop")
+		}
+	}
+
+	if err := install.Control(svc, "install"); err != nil {
+		warn("%v", err)
+	}
+
+	if wasInstalled {
+		if wasRunning {
+			if err := install.Control(svc, "start"); err != nil {
+				warn("%v", err)
+			}
+		} else {
+			log.Println("the gguard service is stopped. Run 'gguard start' to start it.")
+		}
+	}
 }
 
 // installFiles copies the optional scripts and config next to the binaries and
@@ -189,8 +201,12 @@ func installFiles(targetDir string) []string {
 	}
 
 	if !hasScripts {
-		log.Println("no scripts found: the install completes without scripts.")
-		log.Println("Place .ggs files in gg-scripts/ and restart the service.")
+		scriptsDir := filepath.Join(targetDir, "gg-scripts")
+		if entries, err := os.ReadDir(scriptsDir); err != nil || len(entries) == 0 {
+			log.Printf("no .ggs scripts yet: put them in %s and they are picked up on their own.", scriptsDir)
+		} else {
+			log.Printf("nothing to copy from here; keeping the scripts already in %s.", scriptsDir)
+		}
 	}
 	return args
 }
@@ -206,7 +222,7 @@ func doUninstall(userService bool) {
 			userService = true
 		}
 	} else if !install.ServiceExists(install.ServiceName(userService)) {
-		fmt.Printf("the gguard %s service is not installed\n", install.ModeName(userService))
+		fmt.Println(install.ModeHint(userService))
 		return
 	}
 

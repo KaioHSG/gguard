@@ -47,33 +47,32 @@ type gui struct {
 	logs   func() string
 	// cancel stops the whole process when Quit is used in the page.
 	cancel context.CancelFunc
+	// reload asks runGuards to re-read the routines on disk, stop asks it to
+	// stop them while the process keeps running.
+	reload func()
+	stop   func()
 }
 
-// doGUI opens the dashboard in the browser. Guards, the dashboard and — when
-// the tray setting is on — the tray icon all run together in this process. If
-// another instance is already serving the dashboard (the tray, for example) it
-// simply opens it.
+// doGUI makes sure the runner is up and opens its dashboard, bringing the tray
+// icon along when the tray setting is on.
 func doGUI() {
-	if url := probeDashboard(); url != "" {
+	if url := runnerURL(); url != "" {
 		fmt.Printf("GopherGuard is already running — opening %s\n", url)
 		openURL(url)
+	} else {
+		guiAttached = true
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Run the routines here, in the foreground, with the page opening on
+		// top: closing the terminal ends it.
+		runRunner(ctx, cancel, true)
 		return
 	}
 
-	guiAttached = true
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	runForeground(ctx, cancel, foregroundOptions{dashboard: true, openBrowser: true})
-}
-
-// stopEverything ends a foreground run. The page's Quit stops the guards and,
-// when a tray icon is showing, closes it too — the same as the tray's Quit.
-func stopEverything(cancel context.CancelFunc) context.CancelFunc {
-	return func() {
-		quitTray()
-		cancel()
+	if trayAvailable() && install.TrayEnabled() {
+		startIcon()
 	}
 }
 
@@ -89,6 +88,8 @@ func startDashboard(sess *guardSession, status func() (GuardState, string), ring
 		status: status,
 		logs:   guiLogs(ring),
 		cancel: cancel,
+		reload: sess.requestReload,
+		stop:   sess.requestStop,
 	}
 
 	srv := &http.Server{Handler: localOnly(g.routes())}
@@ -115,23 +116,57 @@ func listenLocal() (net.Listener, error) {
 	return net.Listen("tcp", "127.0.0.1:0")
 }
 
-// probeDashboard reports the URL of an instance already serving the dashboard,
-// or "" when there is none.
-func probeDashboard() string {
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	url := "http://127.0.0.1:" + strconv.Itoa(guiDefaultPort)
+// fetchState reads the dashboard state of a running GopherGuard, which is how
+// the tray icon follows the routines it does not own.
+func fetchState(url string) (guiState, bool) {
+	if url == "" {
+		return guiState{}, false
+	}
 
+	client := &http.Client{Timeout: 2 * time.Second}
 	resp, err := client.Get(url + "/api/state")
 	if err != nil {
-		return ""
+		return guiState{}, false
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return guiState{}, false
+	}
 
 	var state guiState
-	if resp.StatusCode != http.StatusOK || json.NewDecoder(resp.Body).Decode(&state) != nil || state.Version == "" {
-		return ""
+	if json.NewDecoder(resp.Body).Decode(&state) != nil || state.Version == "" {
+		return guiState{}, false
 	}
-	return url
+	return state, true
+}
+
+// postAPI asks a running GopherGuard to do something through its dashboard API.
+func postAPI(url, path, body string) bool {
+	if url == "" {
+		return false
+	}
+
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Post(url+path, "application/json", strings.NewReader(body))
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusAccepted
+}
+
+// stateFromString turns a state name from the API back into the enum.
+func stateFromString(s string) GuardState {
+	switch s {
+	case "ok":
+		return StateOK
+	case "error":
+		return StateError
+	case "running":
+		return StateRunning
+	default:
+		return StateIdle
+	}
 }
 
 func (g *gui) routes() *http.ServeMux {
@@ -139,8 +174,29 @@ func (g *gui) routes() *http.ServeMux {
 	mux.HandleFunc("/", g.page)
 	mux.HandleFunc("/api/state", g.state)
 	mux.HandleFunc("/api/run", g.run)
+	mux.HandleFunc("/api/reload", g.reloadRoutines)
+	mux.HandleFunc("/api/stop", g.stopRoutines)
 	mux.HandleFunc("/api/quit", g.quit)
 	return mux
+}
+
+// reloadRoutines re-reads the .ggs scripts and guards.json behind the page.
+func (g *gui) reloadRoutines(w http.ResponseWriter, r *http.Request) {
+	if !postOnly(w, r) || g.reload == nil {
+		return
+	}
+	g.reload()
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// stopRoutines stops the routines without ending the process, so the page
+// stays available to start them again.
+func (g *gui) stopRoutines(w http.ResponseWriter, r *http.Request) {
+	if !postOnly(w, r) || g.stop == nil {
+		return
+	}
+	g.stop()
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (g *gui) page(w http.ResponseWriter, r *http.Request) {

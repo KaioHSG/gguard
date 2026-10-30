@@ -20,6 +20,7 @@ import (
 
 var (
 	userFlag    bool
+	versionFlag bool
 	scriptsFlag scriptsList
 	guardsFlag  string
 )
@@ -34,6 +35,8 @@ func (s *scriptsList) Set(v string) error {
 
 func registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&userFlag, "user", false, "Install per-user instead of system-wide")
+	fs.BoolVar(&versionFlag, "version", false, "Show version and exit")
+	fs.BoolVar(&versionFlag, "v", false, "")
 	fs.Var(&scriptsFlag, "scripts", ".ggs file or directory to install")
 	fs.Var(&scriptsFlag, "s", "")
 	fs.Var(&scriptsFlag, "script", "")
@@ -54,12 +57,14 @@ Usage:
 Commands:
   install [--user]     Install GopherGuard (--user for a per-user install)
   upgrade              Reinstall, keeping the same install type
-  uninstall [--user]   Remove GopherGuard and its service
-  version              Show version
+  uninstall            Remove GopherGuard, its service and its shortcuts
+  version              Show version (same as -v / --version)
   help                 Show this help
 
 Flags:
-  --user               Per-user install (no administrator rights needed)
+  -v, --version        Show version and exit
+  --user               Install per-user instead of system-wide, and select the
+                       per-user installation for uninstall
   -s, --scripts <path> .ggs file or directory to install
   -g, --guards <path>  guards.json to install
 `, install.Version)
@@ -74,6 +79,11 @@ func main() {
 	}
 
 	flag.Parse()
+
+	if versionFlag {
+		fmt.Printf("gguard-setup v%s\n", install.Version)
+		return
+	}
 
 	args := flag.Args()
 	if len(args) == 0 {
