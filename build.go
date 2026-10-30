@@ -324,7 +324,8 @@ func releaseVersion(root string) (string, error) {
 	return winVersion(m[1]), nil
 }
 
-// winVersion turns 0.2.2 into the four-part 0.2.2.0 Windows resources expect.
+// winVersion pads a dotted version into the four-part form Windows resources
+// expect, so "0.2.3" becomes "0.2.3.0".
 func winVersion(v string) string {
 	for strings.Count(v, ".") < 3 {
 		v += ".0"
