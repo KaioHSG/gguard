@@ -59,10 +59,10 @@ Example:
   "fotos":  { "dest": "D:/fotos" } }
 
 // Imported:
-{ "backup": { "dest": "D:/joao" } }
+{ "backup": { "dest": "D:/bob" } }
 
 // Result:
-{ "backup": { "dest": "D:/joao" },  ← replaced entirely
+{ "backup": { "dest": "D:/bob" },  ← replaced entirely
   "fotos":  { "dest": "D:/fotos" } } ← preserved
 ```
 
