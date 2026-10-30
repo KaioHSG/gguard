@@ -2,8 +2,9 @@
   "name": "gguard",
   "displayName": "GopherGuard",
   "description": "Syntax highlighting for GopherGuard .ggs scripts and .ggignore files",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "kaioshg",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.70.0"
   },
